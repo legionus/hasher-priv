@@ -101,15 +101,20 @@ safe_chdir(const char *path, VALIDATE_FPTR validator)
 }
 
 /*
- * Ensure that owner group is change_gid1,
- * no world writable permissions, and group writable
- * bit is set if and only if sticky bit is also set.
+ * Ensure that owner is caller_uid:change_gid1,
+ * S_IWOTH bit is not set, and
+ * S_IWGRP bit is set only when S_ISVTX bit is also set.
  */
 
 /* This function may be executed with caller privileges. */
-static void
-stat_group1_ok_validator(struct stat *st, const char *name)
+void
+stat_caller_ok_validator(struct stat *st, const char *name)
 {
+	if (st->st_uid != caller_uid)
+		error(EXIT_FAILURE, 0,
+		      "%s: expected owner %u, found owner %u",
+		      name, caller_uid, st->st_uid);
+
 	if (st->st_gid != change_gid1)
 		error(EXIT_FAILURE, 0,
 		      "%s: expected group %u, found group %u",
@@ -122,31 +127,10 @@ stat_group1_ok_validator(struct stat *st, const char *name)
 }
 
 /*
- * Ensure that owner is caller_uid:change_gid1,
- * no world writable permissions, and group writable
- * bit is set if and only if sticky bit is also set.
- */
-
-/* This function may be executed with caller privileges. */
-void
-stat_caller_ok_validator(struct stat *st, const char *name)
-{
-	if (st->st_uid != caller_uid)
-		error(EXIT_FAILURE, 0,
-		      "%s: expected owner %u, found owner %u",
-		      name, caller_uid, st->st_uid);
-
-	stat_group1_ok_validator(st, name);
-}
-
-/*
- * Ensure that owner is either caller_uid:change_gid1
- * or change_uid1:change_gid1,
- * no world writable permissions,
- * and group writable bit is set only when sticky bit is also set.
- */
-
-/*
+ * Ensure that owner is either caller_uid:change_gid1 or
+ * change_uid1:change_gid1, and S_IWGRP or S_IWOTH bits
+ * are set only when S_ISVTX bit is also set.
+ *
  * This function is only called via chrootuid() -> unshare_mount() ->
  * setup_mountpoints() -> xmount() -> chdiruid() -> chdiruid_simple() ->
  * safe_chdir() -> safe_chdir_simple() -> stat_private_mount_ok_validator()
@@ -162,7 +146,15 @@ stat_private_mount_ok_validator(struct stat *st, const char *name)
 		      "%s: expected owner %u or %u, found owner %u",
 		      name, caller_uid, change_uid1, st->st_uid);
 
-	stat_group1_ok_validator(st, name);
+	if (st->st_gid != change_gid1)
+		error(EXIT_FAILURE, 0,
+		      "%s: expected group %u, found group %u",
+		      name, change_gid1, st->st_gid);
+
+	if ((st->st_mode & (S_IWGRP | S_IWOTH))
+	    && !(st->st_mode & S_ISVTX))
+		error(EXIT_FAILURE, 0,
+		      "%s: bad perms: %o", name, st->st_mode & 07777);
 }
 
 /*
