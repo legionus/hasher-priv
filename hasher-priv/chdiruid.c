@@ -107,21 +107,37 @@ chdiruid(const char *path)
 	ch_gid(caller_gid, &saved_gid);
 	ch_uid(caller_uid, &saved_uid);
 
-	VALIDATE_FPTR validator = unshared_mount ?
-		stat_caller_or_user1_ok_validator: stat_caller_ok_validator;
-
 	/* Change and verify directory, check for chroot prefix path. */
 	if (path[0] == '/')
 		chdiruid_simple(path, stat_caller_ok_validator);
-	else if (!strchr(path, '/'))
-		chdiruid_simple(path, validator);
 	else
 	{
-		char   *elem, *p = xstrdup(path);
+		VALIDATE_FPTR validator = unshared_mount ?
+			stat_private_mount_ok_validator: stat_caller_ok_validator;
 
-		for (elem = strtok(p, "/"); elem; elem = strtok(0, "/"))
-			chdiruid_simple(elem, validator);
-		free(p);
+		/*
+		 * The only case when validator can be assigned to
+		 * stat_private_mount_ok_validator() is when this function
+		 * is called with a relative path after CLONE_NEWNS.
+		 *
+		 * The only way this can happen is via chrootuid() ->
+		 * unshare_mount() -> setup_mountpoints() -> xmount() ->
+		 * chdiruid() call chain.
+		 *
+		 * In this case, "path" is the directory (relative to
+		 * chroot_path) where mount() is going to be called.
+		 */
+
+		if (!strchr(path, '/'))
+			chdiruid_simple(path, validator);
+		else
+		{
+			char   *elem, *p = xstrdup(path);
+
+			for (elem = strtok(p, "/"); elem; elem = strtok(0, "/"))
+				chdiruid_simple(elem, validator);
+			free(p);
+		}
 	}
 
 	/* Restore credentials. */

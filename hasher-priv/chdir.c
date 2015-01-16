@@ -143,12 +143,19 @@ stat_caller_ok_validator(struct stat *st, const char *name)
  * Ensure that owner is either caller_uid:change_gid1
  * or change_uid1:change_gid1,
  * no world writable permissions,
- * and group writable bit is set if and only if sticky bit is also set.
+ * and group writable bit is set only when sticky bit is also set.
+ */
+
+/*
+ * This function is only called via chrootuid() -> unshare_mount() ->
+ * setup_mountpoints() -> xmount() -> chdiruid() -> chdiruid_simple() ->
+ * safe_chdir() -> safe_chdir_simple() -> stat_private_mount_ok_validator()
+ * chain.
  */
 
 /* This function may be executed with caller privileges. */
 void
-stat_caller_or_user1_ok_validator(struct stat *st, const char *name)
+stat_private_mount_ok_validator(struct stat *st, const char *name)
 {
 	if (st->st_uid != caller_uid && st->st_uid != change_uid1)
 		error(EXIT_FAILURE, 0,
