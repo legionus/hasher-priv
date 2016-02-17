@@ -33,32 +33,33 @@ static void
 xmknod(const char *name, const char *devpath, mode_t mode, unsigned major,
        unsigned minor)
 {
-	gid_t   saved_gid = (gid_t) - 1;
-
 	if (!link(devpath, name))
 		return;
 
-	ch_gid(0, &saved_gid);
 	if (mknod(name, mode, makedev(major, minor)))
 		error(EXIT_FAILURE, errno, "mknod: %s", name);
-	ch_gid(saved_gid, 0);
 }
 
 int
 do_makedev(void)
 {
+	gid_t   saved_gid = (gid_t) - 1;
 	mode_t  m;
 
 	chdiruid(chroot_path);
 	chdiruid("dev");
 
+	ch_gid(0, &saved_gid);
 	m = umask(0);
+
 	xmknod("null", "/dev/null", S_IFCHR | 0666, 1, 3);
 	xmknod("zero", "/dev/zero", S_IFCHR | 0666, 1, 5);
 	xmknod("full", "/dev/full", S_IFCHR | 0666, 1, 7);
 	xmknod("urandom", "/dev/urandom", S_IFCHR | 0644, 1, 9);
 	xmknod("random", "/dev/urandom", S_IFCHR | 0644, 1, 9);	/* pseudo random. */
+
 	umask(m);
+	ch_gid(saved_gid, 0);
 
 	return 0;
 }
@@ -66,16 +67,21 @@ do_makedev(void)
 int
 do_makeconsole(void)
 {
+	gid_t   saved_gid = (gid_t) - 1;
 	mode_t  m;
 
 	chdiruid(chroot_path);
 	chdiruid("dev");
 
+	ch_gid(0, &saved_gid);
 	m = umask(0);
+
 	xmknod("console", "/dev/console", S_IFCHR | 0600, 5, 1);
 	xmknod("tty0", "/dev/tty0", S_IFCHR | 0600, 4, 0);
 	xmknod("fb0", "/dev/fb0", S_IFCHR | 0600, 29, 0);
+
 	umask(m);
+	ch_gid(saved_gid, 0);
 
 	return 0;
 }
@@ -83,6 +89,7 @@ do_makeconsole(void)
 int
 do_maketty(void)
 {
+	gid_t   saved_gid = (gid_t) - 1;
 	mode_t  m;
 
 	if (!allow_tty_devices)
@@ -92,10 +99,14 @@ do_maketty(void)
 	chdiruid(chroot_path);
 	chdiruid("dev");
 
+	ch_gid(0, &saved_gid);
 	m = umask(0);
+
 	xmknod("tty", "/dev/tty", S_IFCHR | 0666, 5, 0);
 	xmknod("ptmx", "/dev/ptmx", S_IFCHR | 0666, 5, 2);
+
 	umask(m);
+	ch_gid(saved_gid, 0);
 
 	return 0;
 }
