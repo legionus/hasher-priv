@@ -134,10 +134,18 @@ and therefore install DoS attack against host system.
 .TP
 .B mount
 Mount appropriate file system according to specified mount point.
-For example, proc and sysfs virtual file systems provide access to various
-system resources which could be abused by pseudousers, devpts virtual
-file system provides access to all pty device files which also could be
-abused by pseudousers if these files have inappropriate permissions.
+For example,
+.I proc
+and
+.I sysfs
+virtual file systems provide access to various
+system resources which could be abused by pseudousers,
+.I devpts
+virtual file system provides access to all pty device files
+(unless mounted with
+.I newinstance
+mount option) which also could be abused by pseudousers if these files
+have inappropriate permissions.
 .TP
 .B umount
 Umount all file systems previously mounted by
