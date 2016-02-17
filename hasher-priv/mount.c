@@ -45,10 +45,10 @@ static struct mnt_ent
 	const char *mnt_opts;
 } def_fstab[] =
 {
-	{"proc", "/proc", "proc", "nosuid,noexec,gid=proc"},
-	{"devpts", "/dev/pts", "devpts", "nosuid,noexec,gid=tty,mode=0620"},
-	{"sysfs", "/sys", "sysfs", "ro,nosuid,noexec"},
-	{"shmfs", "/dev/shm", "tmpfs", "nosuid,noexec,nodev,gid=0,mode=1777,nr_blocks=256,nr_inodes=256"}
+	{"proc", "/proc", "proc", "ro,nosuid,nodev,noexec,gid=proc"},
+	{"devpts", "/dev/pts", "devpts", "ro,nosuid,noexec,gid=tty,mode=0620"},
+	{"sysfs", "/sys", "sysfs", "ro,nosuid,nodev,noexec"},
+	{"shmfs", "/dev/shm", "tmpfs", "nosuid,nodev,noexec,gid=0,mode=1777,nr_blocks=256,nr_inodes=256"}
 };
 
 #define def_fstab_size (sizeof (def_fstab) / sizeof (def_fstab[0]))
