@@ -48,7 +48,8 @@ static struct mnt_ent
 	{"proc", "/proc", "proc", "ro,nosuid,nodev,noexec,gid=proc"},
 	{"devpts", "/dev/pts", "devpts", "ro,nosuid,noexec,gid=tty,mode=0620,ptmxmode=0666,newinstance"},
 	{"sysfs", "/sys", "sysfs", "ro,nosuid,nodev,noexec"},
-	{"shmfs", "/dev/shm", "tmpfs", "nosuid,nodev,noexec,gid=0,mode=1777,nr_blocks=256,nr_inodes=256"}
+	{"shmfs", "/dev/shm", "tmpfs", "nosuid,nodev,noexec,gid=0,mode=1777,nr_blocks=256,nr_inodes=256"},
+	{"/sys/fs/cgroup", "/sys/fs/cgroup", "rbind", "ro,rbind,nosuid,nodev,noexec"}
 };
 
 #define def_fstab_size (sizeof (def_fstab) / sizeof (def_fstab[0]))
