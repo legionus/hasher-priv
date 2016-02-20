@@ -29,7 +29,6 @@
 #include <time.h>
 #include <pwd.h>
 #include <grp.h>
-#include <pty.h>
 #include <sys/socket.h>
 
 #include "priv.h"
@@ -104,10 +103,6 @@ chrootuid(uid_t uid, gid_t gid, const char *ehome,
 	if (!use_pty && (pipe(pipe_out) || pipe(pipe_err)))
 		error(EXIT_FAILURE, errno, "pipe");
 
-	/* Always create pty, necessary for ioctl TIOCSCTTY in the child. */
-	if (openpty(&master, &slave, 0, 0, 0) < 0)
-		error(EXIT_FAILURE, errno, "openpty");
-
 	/* Create socketpair only if X11 forwarding is enabled. */
 	if (x11_prepare_connect() == EXIT_SUCCESS
 	    && socketpair(AF_UNIX, SOCK_STREAM, 0, ctl))
@@ -118,11 +113,28 @@ chrootuid(uid_t uid, gid_t gid, const char *ehome,
 	if (!share_caller_network)
 		unshare_network();
 
+	if (setgroups(0UL, 0) < 0)
+		error(EXIT_FAILURE, errno, "setgroups");
+
+	/* Always create pty, necessary for ioctl TIOCSCTTY in the child. */
+	master = open_pty(&slave, 0, 1);
+
 	if (chroot(".") < 0)
 		error(EXIT_FAILURE, errno, "chroot: %s", chroot_path);
 
-	if (setgroups(0UL, 0) < 0)
-		error(EXIT_FAILURE, errno, "setgroups");
+	/* Try to create another pty inside chroot. */
+	{
+		int     slave2 = -1;
+		int     master2 = open_pty(&slave2, 1, master < 0);
+		if (master2 > master)
+		{
+			close(master), master = master2;
+			close(slave), slave = slave2;
+		}
+	}
+
+	if ( master < 0)
+		error(EXIT_FAILURE, 0, "failed to create pty");
 
 	set_rlimits();
 

@@ -73,15 +73,33 @@ Here is a hasher-priv (euid=root,egid=hashman,gid!=egid) control flow:
     + safe chdir to chroot_path
     + sanitize file descriptors again
     + if use_pty is disabled, create pipe to handle child's stdout and stderr
-    + create pty
     + if X11 forwarding is requested, create socketpair and
       open /tmp/.X11-unix directory readonly for later use with fchdir()
     + unless share_ipc is enabled, isolate System V IPC namespace
     + unless share_uts is enabled, unshare UTS namespace
     + if X11 forwarding to a tcp address was not requested,
       unless share_network is enabled, unshare network
-    + chroot to "."
     + clear supplementary group access list
+    + create pty:
+      + temporarily switch to called_uid:caller_gid
+      + open /dev/ptmx
+      + fetch pts number
+      + unlock pts pair
+      + open pts slave
+      + switch uid:gid back
+    + chroot to "."
+    + create another pty if possible:
+      + temporarily switch to called_uid:caller_gid
+      + safely chdir to "dev"
+      + if "pts/ptmx" is available with right permissions:
+        + replace "ptmx" with a symlink to "pts/ptmx"
+        + open "ptmx"
+        + fetch pts number
+        + unlock pts pair
+        + open pts slave
+      + chdir back to "/"
+      + switch uid:gid back
+      + if another pty was crated, close pts pair that was opened earlier
     + set rlimits
     + set close-on-exec flag on all non-standard descriptors
     + fork

@@ -75,6 +75,7 @@ void    xwrite_all(int fd, const char *buffer, size_t count);
 int     init_tty(void);
 void    restore_tty(void);
 int     tty_copy_winsize(int master_fd, int slave_fd);
+int     open_pty(int *slave_fd, int chrooted, int verbose_error);
 task_t  parse_cmdline(int ac, const char *av[]);
 void    init_caller_data(void);
 void    parse_env(void);
