@@ -47,7 +47,7 @@ CPPFLAGS = -std=gnu99 -D_GNU_SOURCE $(CHDIRUID_FLAGS) \
 	$(LFS_CFLAGS) -DPROJECT_VERSION=\"$(VERSION)\"
 CFLAGS = -pipe -O2
 override CFLAGS += $(WARNINGS)
-LDLIBS = -lutil
+LDLIBS =
 
 SRC = caller.c chdir.c chdiruid.c chid.c child.c chrootuid.c cmdline.c \
 	config.c fds.c getconf.c getugid.c ipc.c killuid.c io_log.c io_x11.c \
