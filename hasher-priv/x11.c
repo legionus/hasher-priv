@@ -308,8 +308,8 @@ x11_parse_display(void)
 
 	display = xstrdup(x11_display);
 
-	char   *colon = strchr(display, ':');
-	const char *number = strrchr(display, ':');
+	const char *const colon = strchr(display, ':');
+	char *number = strrchr(display, ':');
 
 	if (!colon || !number)
 	{
@@ -320,7 +320,7 @@ x11_parse_display(void)
 	}
 
 	x11_connect_name = display;
-	*colon = '\0';
+	*number = '\0';
 	++number;
 
 	char   *endp;
