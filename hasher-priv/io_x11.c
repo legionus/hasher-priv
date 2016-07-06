@@ -177,6 +177,9 @@ io_check_auth_data(io_x11_t io, const char *x11_saved_data,
 		return;
 	}
 
+	if (!proto_len && !data_len)
+		return;
+
 	if (data_len != x11_data_len ||
 	    memcmp(p + 12 + ((proto_len + 3) & (unsigned) ~3),
 		   x11_fake_data, x11_data_len) != 0)
