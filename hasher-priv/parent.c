@@ -1,6 +1,6 @@
 
 /*
-  Copyright (C) 2003-2008  Dmitry V. Levin <ldv@altlinux.org>
+  Copyright (C) 2003-2016  Dmitry V. Levin <ldv@altlinux.org>
 
   The chrootuid parent handler for the hasher-priv program.
 
@@ -29,7 +29,7 @@
 #include <fcntl.h>
 #include <time.h>
 #include <signal.h>
-#include <setjmp.h>
+#include <sys/select.h>
 #include <sys/wait.h>
 
 #include "priv.h"
@@ -38,56 +38,22 @@
 static volatile pid_t child_pid;
 
 static volatile sig_atomic_t sigwinch_arrived;
-static volatile sig_atomic_t canjump;
-
-static sigjmp_buf jmpbuf;
 
 static int
 xselect(int nfds, fd_set *read_fds, fd_set *write_fds,
 	const unsigned long int timeout)
 {
-	struct timeval tmout;
-	sigset_t savemask, sigmask;
+	const struct timespec tmout = {.tv_sec = (time_t) timeout };
+	const sigset_t sigmask = {};
 
-	tmout.tv_sec = (time_t) timeout;
-	tmout.tv_usec = 0;
-	sigemptyset(&sigmask);
-
-	if (sigprocmask (SIG_SETMASK, NULL, &savemask) < 0)
-		error(EXIT_FAILURE, errno, "sigprocmask");
-
-	if (sigsetjmp(jmpbuf, 1))
-	{
-		if (sigprocmask (SIG_SETMASK, &savemask, NULL) < 0)
-			error(EXIT_FAILURE, errno, "sigprocmask");
-		errno = EINTR;
-		return -1;
-	}
-	canjump = 1;
-
-	if (sigprocmask (SIG_SETMASK, &sigmask, NULL) < 0)
-		error(EXIT_FAILURE, errno, "sigprocmask");
-
-	int rc = select(nfds, read_fds, write_fds, NULL,
-		       (timeout ? &tmout : 0));
-	int save_errno = errno;
-
-	canjump = 0;
-	if (sigprocmask (SIG_SETMASK, &savemask, NULL) < 0)
-		error(EXIT_FAILURE, errno, "sigprocmask");
-	errno = save_errno;
-	return rc;
+	return pselect(nfds, read_fds, write_fds, NULL,
+		       (timeout ? &tmout : NULL), &sigmask);
 }
 
 static void
 sigwinch_handler(int __attribute__((unused)) signo)
 {
 	++sigwinch_arrived;
-	if (canjump)
-	{
-		canjump = 0;
-		siglongjmp(jmpbuf, 1);
-	}
 }
 
 static int child_rc;
@@ -119,12 +85,6 @@ sigchld_handler(int __attribute__ ((unused)) signo)
 	{
 		/* quite strange condition */
 		child_rc = 255;
-	}
-
-	if (canjump)
-	{
-		canjump = 0;
-		siglongjmp(jmpbuf, 1);
 	}
 }
 
