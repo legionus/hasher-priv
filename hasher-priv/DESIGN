@@ -1,5 +1,5 @@
 
-Here is a hasher-priv (euid=root,egid=hashman,gid!=egid) control flow:
+Here is a hasher-priv (euid=user,egid=hashman,gid!=egid) control flow:
 + sanitize file descriptors
   + set safe umask
   + ensure 0,1,2 are valid file descriptors
@@ -9,143 +9,195 @@ Here is a hasher-priv (euid=root,egid=hashman,gid!=egid) control flow:
   + parse -h, --help and -number options
     + caller_num initialized here
   + parse arguments, abort if wrong
-    + chroot_path and chroot_argv are initialized here
-    + valid arguments are:
-      getconf
-      killuid
-      getugid1
-      chrootuid1 <chroot path> <program> [program args]
-      getugid2
-      chrootuid2 <chroot path> <program> [program args]
-      makedev <chroot path>
-      mount <chroot path> <mount point>
-      umount <chroot path>
-+ initialize data related to caller
-  + caller_uid initialized here from getuid()
-    + caller_uid must be valid uid
-  + caller_gid initialized here from getgid()
-    + caller_gid must be valid gid
-  + caller_user initialized here from getpwnam(LOGNAME)->pw_name or
-    getpwuid(caller_uid)->pw_name
-    + must be true: caller_uid == pw->pw_uid
-    + must be true: caller_gid == pw->pw_gid
-  + caller_home initialized here
-    + caller_user's home directory must exist
-+ read work limit hints from environment variables
++ connect to /var/run/hasher-priv socket
++ send task to server with UNIX credentials
+  + send task header
+    + send current stdout and stderr to server
+  + send task arguments
+  + send environment variables
++ receive a task result code from the server
++ finish execution with the task result code
+
+Here is a hasher-privd (euid=root,egid=hashman,gid==egid) control flow:
++ parse command line arguments
+  + parse -h and --help options
++ set safe umask
++ check pidfile, abort if server already running
++ daemonize
+  + change current working directory to "/"
+  + close all file descriptors
++ initialize logger
++ create pidfile
++ examine and change blocked signals
++ I/O event notification and add file descriptors
+  + create a file descriptor for accepting signals
+  + create and listen server socket
+    + allow send or receive UNIX credentials
++ wait for incomming events
+  + handle signal if signal is received
+  + handle connection if the client opened a new connection
+    + fork new process
++ close all descriptors in notification poll
++ close and remove pidfile
+
+Here is control flow for server connection handler:
 + drop all environment variables
-+ load configuration
-  + safe chdir to /etc/hasher-priv
-  + safe load "system" file
-    + config format is sequence of name=value lines
-    + valid names are:
-      user1
-      user2
-      prefix
-      umask
-      nice
-      allow_ttydev
-      allowed_mountpoints
-      rlimit_(hard|soft)_*
-      wlimit_(time_elapsed|time_idle|bytes_written)
-  + safe chdir to "user.d"
-  + safe load caller_user file
-    + change_user1 and change_user2 should be initialized here
-  + if caller_num is defined
-    + discard change_user1 and change_user2
-    + safe load caller_user:caller_num file
-      + change_user1 and change_user2 should be initialized here
-  + change_uid1 and change_gid1 initialized from change_user1
-  + change_uid2 and change_gid2 initialized from change_user2
-+ execute choosen task
-  + getconf: print config file /etc/hasher-priv/user.d/caller_user[:caller_num]
-  + getugid1: print change_uid1:change_gid1 pair
-  + getugid2: print change_uid2:change_gid2 pair
-  + killuid
-    + check for valid uids specified
-    + drop dumpable flag (just in case - not required)
-    + setuid to specified uid pair
-    + kill (-1, SIGKILL)
-    + purge all SYSV IPC objects belonging to specified uid pair
-  + chrootuid1/chrootuid2
-    + check for valid uid specified
-    + unless share_mount is enabled, unshare mount namespace and mount all
-      mountpoints specified by requested_mountpoints environment variable
-    + safe chdir to chroot_path
-    + sanitize file descriptors again
-    + if use_pty is disabled, create pipe to handle child's stdout and stderr
-    + if X11 forwarding is requested, create socketpair and
-      open /tmp/.X11-unix directory readonly for later use with fchdir()
-    + unless share_ipc is enabled, isolate System V IPC namespace
-    + unless share_uts is enabled, unshare UTS namespace
-    + if X11 forwarding to a tcp address was not requested,
-      unless share_network is enabled, unshare network
-    + clear supplementary group access list
-    + create pty:
-      + temporarily switch to called_uid:caller_gid
-      + open /dev/ptmx
-      + fetch pts number
-      + unlock pts pair
-      + open pts slave
-      + switch uid:gid back
-    + chroot to "."
-    + create another pty if possible:
-      + temporarily switch to called_uid:caller_gid
-      + safely chdir to "dev"
-      + if "pts/ptmx" is available with right permissions:
-        + replace "ptmx" with a symlink to "pts/ptmx"
-        + open "ptmx"
-        + fetch pts number
-        + unlock pts pair
-        + open pts slave
-      + chdir back to "/"
-      + switch uid:gid back
-      + if another pty was crated, close pts pair that was opened earlier
-    + set rlimits
-    + set close-on-exec flag on all non-standard descriptors
-    + fork
-      + in parent:
-        + setgid/setuid to caller user
-        + install CHLD signal handler
-        + unblock master pty and pipe descriptors
-        + if use_pty is enabled, initialize tty and install WINCH signal handler
-        + listen to "/dev/log"
-        + while work limits are not exceeded, handle child input/output
-        + close master pty descriptor, thus sending HUP to child session
-        + wait for child process termination
-        + remove CHLD signal handler
-        + return child proccess exit code
-      + in child:
-        + if X11 forwarding to a tcp address was requested,
++ receive task header
+  + receive UNIX credentials
+  + receive client's stdin, stdout and stderr
+  + check number of arguments
++ receive task arguments if we expect them
++ receive environment variables if client want to send them
++ fork process to handle task
+  + in parent:
+    + wait exit status
+  + in child:
+    + replace stdin, stdout and stderr with those that were received
+    + apply the client's environment variables
+    + sanitize file descriptors
+      + set safe umask
+      + ensure 0,1,2 are valid file descriptors
+      + close all the rest
+    + parse task arguments
+      + check for non-zero argument list
+        + valid arguments are:
+          getconf
+          killuid
+          getugid1
+          chrootuid1 <chroot path> <program> [program args]
+          getugid2
+          chrootuid2 <chroot path> <program> [program args]
+          makedev <chroot path>
+          mount <chroot path> <mount point>
+          umount <chroot path>
+      + caller_num initialized here
+    + chroot_path and chroot_argv are initialized here
+    + initialize data related to caller
+      + caller_uid initialized here by uid received via the socket
+        + caller_uid must be valid uid
+      + caller_gid initialized here by uid received via the socket
+        + caller_gid must be valid gid
+      + caller_user initialized here from getpwuid(caller_uid)->pw_name
+        + must be true: caller_uid == pw->pw_uid
+        + must be true: caller_gid == pw->pw_gid
+      + caller_home initialized here
+        + caller_user's home directory must exist
+    + read work limit hints from environment variables
+    + drop all environment variables
+    + load configuration
+      + safe chdir to /etc/hasher-priv
+      + safe load "system" file
+        + config format is sequence of name=value lines
+        + valid names are:
+          user1
+          user2
+          prefix
+          umask
+          nice
+          allow_ttydev
+          allowed_mountpoints
+          rlimit_(hard|soft)_*
+          wlimit_(time_elapsed|time_idle|bytes_written)
+      + safe chdir to "user.d"
+      + safe load caller_user file
+        + change_user1 and change_user2 should be initialized here
+      + if caller_num is defined
+        + discard change_user1 and change_user2
+        + safe load caller_user:caller_num file
+          + change_user1 and change_user2 should be initialized here
+      + change_uid1 and change_gid1 initialized from change_user1
+      + change_uid2 and change_gid2 initialized from change_user2
+    + execute choosen task
+      + getconf: print config file /etc/hasher-priv/user.d/caller_user[:caller_num]
+      + getugid1: print change_uid1:change_gid1 pair
+      + getugid2: print change_uid2:change_gid2 pair
+      + killuid
+        + check for valid uids specified
+        + drop dumpable flag (just in case - not required)
+        + setuid to specified uid pair
+        + kill (-1, SIGKILL)
+        + purge all SYSV IPC objects belonging to specified uid pair
+      + chrootuid1/chrootuid2
+        + check for valid uid specified
+        + unless share_mount is enabled, unshare mount namespace and mount all
+          mountpoints specified by requested_mountpoints environment variable
+        + safe chdir to chroot_path
+        + sanitize file descriptors again
+        + if use_pty is disabled, create pipe to handle child's stdout and stderr
+        + if X11 forwarding is requested, create socketpair and
+          open /tmp/.X11-unix directory readonly for later use with fchdir()
+        + unless share_ipc is enabled, isolate System V IPC namespace
+        + unless share_uts is enabled, unshare UTS namespace
+        + if X11 forwarding to a tcp address was not requested,
           unless share_network is enabled, unshare network
-        + setgid/setuid to specified user
-        + setsid
-        + change controlling terminal to pty
-        + redirect stdin if required, either to null or to pty
-        + redirect stdout and stderr either to pipe or to pty
-        + set nice
-        + if X11 forwarding is requested,
-          + add X11 auth entry using xauth utility
-          + create and bind unix socket for X11 forwarding
-          + send listening descriptor and fake auth data to the parent
-        + set umask
-        + execute specified program
-  + makedev
-    + safe chdir to chroot_path
-    + safe chdir to dev
-    + create devices available to all users: null, zero, full, random, urandom
-    + create devices available to root only: console, tty0, fb0
-  + maketty
-    + safe chdir to chroot_path
-    + safe chdir to dev
-    + create devices: tty, ptmx
-  + mount
-    + exit if share_mount is not enabled
-    + safe chdir to chroot_path
-    + safe chdir to appropriate mount point
-    + mount given file system
-  + umount
-    + exit if share_mount is not enabled
-    + for each mount point with chroot_path prefix listed in /proc/mounts
-      + safe chdir to chroot_path
-      + safe chdir to appropriate mount point
-      + lazy unmount current work directory
+        + clear supplementary group access list
+        + create pty:
+          + temporarily switch to called_uid:caller_gid
+          + open /dev/ptmx
+          + fetch pts number
+          + unlock pts pair
+          + open pts slave
+          + switch uid:gid back
+        + chroot to "."
+        + create another pty if possible:
+          + temporarily switch to called_uid:caller_gid
+          + safely chdir to "dev"
+          + if "pts/ptmx" is available with right permissions:
+            + replace "ptmx" with a symlink to "pts/ptmx"
+            + open "ptmx"
+            + fetch pts number
+            + unlock pts pair
+            + open pts slave
+          + chdir back to "/"
+          + switch uid:gid back
+          + if another pty was crated, close pts pair that was opened earlier
+        + set rlimits
+        + set close-on-exec flag on all non-standard descriptors
+        + fork
+          + in parent:
+            + setgid/setuid to caller user
+            + install CHLD signal handler
+            + unblock master pty and pipe descriptors
+            + if use_pty is enabled, initialize tty and install WINCH signal handler
+            + listen to "/dev/log"
+            + while work limits are not exceeded, handle child input/output
+            + close master pty descriptor, thus sending HUP to child session
+            + wait for child process termination
+            + remove CHLD signal handler
+            + return child proccess exit code
+          + in child:
+            + if X11 forwarding to a tcp address was requested,
+              unless share_network is enabled, unshare network
+            + setgid/setuid to specified user
+            + setsid
+            + change controlling terminal to pty
+            + redirect stdin if required, either to null or to pty
+            + redirect stdout and stderr either to pipe or to pty
+            + set nice
+            + if X11 forwarding is requested,
+              + add X11 auth entry using xauth utility
+              + create and bind unix socket for X11 forwarding
+              + send listening descriptor and fake auth data to the parent
+            + set umask
+            + execute specified program
+      + makedev
+        + safe chdir to chroot_path
+        + safe chdir to dev
+        + create devices available to all users: null, zero, full, random, urandom
+        + create devices available to root only: console, tty0, fb0
+      + maketty
+        + safe chdir to chroot_path
+        + safe chdir to dev
+        + create devices: tty, ptmx
+      + mount
+        + exit if share_mount is not enabled
+        + safe chdir to chroot_path
+        + safe chdir to appropriate mount point
+        + mount given file system
+      + umount
+        + exit if share_mount is not enabled
+        + for each mount point with chroot_path prefix listed in /proc/mounts
+          + safe chdir to chroot_path
+          + safe chdir to appropriate mount point
+          + lazy unmount current work directory
++ send task return code to client

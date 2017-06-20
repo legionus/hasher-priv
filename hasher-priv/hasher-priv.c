@@ -24,8 +24,11 @@
 #include <error.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #include "priv.h"
+#include "logging.h"
+#include "sockets.h"
 
 static void
 my_error_print_progname(void)
@@ -34,8 +37,9 @@ my_error_print_progname(void)
 }
 
 int
-main(int ac, const char *av[])
+main(int ac, const char *av[], const char *ev[])
 {
+	int     conn, rc;
 	task_t  task;
 
 	error_print_progname = my_error_print_progname;
@@ -46,51 +50,29 @@ main(int ac, const char *av[])
 	/* Second, parse command line arguments. */
 	task = parse_cmdline(ac, av);
 
-	if (chroot_path && *chroot_path != '/')
-		error(EXIT_FAILURE, 0, "%s: invalid chroot path",
-		      chroot_path);
+	// FIXME
+	logging_init(logging_level("debug"));
 
-	/* Third, initialize data related to caller. */
-	init_caller_data();
+	/* Connect to remote server. */
+	if ((conn = unix_connect(SOCKETDIR, PROJECT)) < 0)
+		return EXIT_FAILURE;
 
-	/* 4th, parse environment for config options. */
-	parse_env();
+	if (send_hdr(conn, task, caller_num, task_args, ev) < 0)
+		return EXIT_FAILURE;
 
-	/* We don't need environment variables any longer. */
-	if (clearenv() != 0)
-		error(EXIT_FAILURE, errno, "clearenv");
+	if (send_args(conn, task_args) < 0)
+		return EXIT_FAILURE;
 
-	/* Load config according to caller information. */
-	configure();
+	if (send_args(conn, ev) < 0)
+		return EXIT_FAILURE;
 
-	/* Finally, execute choosen task. */
-	switch (task)
-	{
-		case TASK_GETCONF:
-			return do_getconf();
-		case TASK_KILLUID:
-			return do_killuid();
-		case TASK_GETUGID1:
-			return do_getugid1();
-		case TASK_CHROOTUID1:
-			return do_chrootuid1();
-		case TASK_GETUGID2:
-			return do_getugid2();
-		case TASK_CHROOTUID2:
-			return do_chrootuid2();
-		case TASK_MAKEDEV:
-			return do_makedev();
-		case TASK_MAKETTY:
-			return do_maketty();
-		case TASK_MAKECONSOLE:
-			return do_makeconsole();
-		case TASK_MOUNT:
-			return do_mount();
-		case TASK_UMOUNT:
-			return do_umount();
-		default:
-			error(EXIT_FAILURE, 0, "unknown task %d", task);
-	}
+	rc = EXIT_SUCCESS;
 
-	return EXIT_FAILURE;
+	if (recv_answer(conn, &rc) < 0)
+		return EXIT_FAILURE;
+
+	/* Close socket. */
+	close(conn);
+
+	return rc;
 }

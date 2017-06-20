@@ -33,6 +33,7 @@
 
 #include "priv.h"
 #include "xmalloc.h"
+#include "sockets.h"
 
 #define X11_UNIX_DIR "/tmp/.X11-unix"
 
@@ -40,55 +41,6 @@ typedef int (*x11_connect_method_t) (const char *, unsigned);
 static x11_connect_method_t x11_connect_method;
 static const char *x11_connect_name;
 static unsigned long x11_connect_port;
-
-/* This function may be executed with caller or child privileges. */
-
-static int
-unix_listen(const char *dir_name, const char *file_name)
-{
-	struct sockaddr_un sun;
-
-	memset(&sun, 0, sizeof(sun));
-	sun.sun_family = AF_UNIX;
-	snprintf(sun.sun_path, sizeof sun.sun_path, "%s/%s",
-		 dir_name, file_name);
-
-	if (unlink(sun.sun_path) && errno != ENOENT)
-	{
-		error(EXIT_SUCCESS, errno, "unlink: %s", sun.sun_path);
-		return -1;
-	}
-
-	if (mkdir(dir_name, 0700) && errno != EEXIST)
-	{
-		error(EXIT_SUCCESS, errno, "mkdir: %s", dir_name);
-		return -1;
-	}
-
-	int     fd;
-
-	if ((fd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
-	{
-		error(EXIT_SUCCESS, errno, "socket AF_UNIX");
-		return -1;
-	}
-
-	if (bind(fd, (struct sockaddr *) &sun, (socklen_t) sizeof sun))
-	{
-		error(EXIT_SUCCESS, errno, "bind: %s", sun.sun_path);
-		(void) close(fd);
-		return -1;
-	}
-
-	if (listen(fd, 16) < 0)
-	{
-		error(EXIT_SUCCESS, errno, "listen: %s", sun.sun_path);
-		(void) close(fd);
-		return -1;
-	}
-
-	return fd;
-}
 
 /* This function may be executed with caller privileges. */
 

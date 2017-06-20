@@ -4,6 +4,7 @@ getconf.sh
 getugid1.sh
 getugid2.sh
 hasher-priv
+hasher-privd
 hasher-priv.8
 hasher-priv.conf.5
 hasher-useradd

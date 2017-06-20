@@ -102,6 +102,8 @@ const char *single_mountpoint;
 const char **chroot_argv;
 unsigned caller_num;
 
+const char **task_args;
+
 static unsigned
 get_caller_num(const char *str)
 {
@@ -148,6 +150,8 @@ parse_cmdline(int argc, const char *argv[])
 	if (ac < 1)
 		show_usage("insufficient arguments");
 
+	task_args = NULL;
+
 	if (!strcmp("getconf", av[0]))
 	{
 		if (ac != 1)
@@ -167,8 +171,7 @@ parse_cmdline(int argc, const char *argv[])
 	{
 		if (ac < 3)
 			show_usage("%s: invalid usage", av[0]);
-		chroot_path = av[1];
-		chroot_argv = av + 2;
+		task_args = av + 1;
 		return TASK_CHROOTUID1;
 	} else if (!strcmp("getugid2", av[0]))
 	{
@@ -179,40 +182,61 @@ parse_cmdline(int argc, const char *argv[])
 	{
 		if (ac < 3)
 			show_usage("%s: invalid usage", av[0]);
-		chroot_path = av[1];
-		chroot_argv = av + 2;
+		task_args = av + 1;
 		return TASK_CHROOTUID2;
 	} else if (!strcmp("makedev", av[0]))
 	{
 		if (ac != 2)
 			show_usage("%s: invalid usage", av[0]);
-		chroot_path = av[1];
+		task_args = av + 1;
 		return TASK_MAKEDEV;
 	} else if (!strcmp("maketty", av[0]))
 	{
 		if (ac != 2)
 			show_usage("%s: invalid usage", av[0]);
-		chroot_path = av[1];
+		task_args = av + 1;
 		return TASK_MAKETTY;
 	} else if (!strcmp("makeconsole", av[0]))
 	{
 		if (ac != 2)
 			show_usage("%s: invalid usage", av[0]);
-		chroot_path = av[1];
+		task_args = av + 1;
 		return TASK_MAKECONSOLE;
 	} else if (!strcmp("mount", av[0]))
 	{
 		if (ac != 3)
 			show_usage("%s: invalid usage", av[0]);
-		chroot_path = av[1];
-		single_mountpoint = av[2];
+		task_args = av + 1;
 		return TASK_MOUNT;
 	} else if (!strcmp("umount", av[0]))
 	{
 		if (ac != 2)
 			show_usage("%s: invalid usage", av[0]);
-		chroot_path = av[1];
+		task_args = av + 1;
 		return TASK_UMOUNT;
 	} else
 		show_usage("%s: invalid argument", av[0]);
+}
+
+void
+parse_task_args(task_t task, const char *argv[])
+{
+	switch (task) {
+		case TASK_MAKEDEV:
+		case TASK_MAKETTY:
+		case TASK_MAKECONSOLE:
+		case TASK_UMOUNT:
+			chroot_path = argv[0];
+			break;
+		case TASK_CHROOTUID1:
+		case TASK_CHROOTUID2:
+			chroot_path = argv[0];
+			chroot_argv = (const char **)argv + 1;
+		case TASK_MOUNT:
+			chroot_path       = argv[0];
+			single_mountpoint = argv[1];
+			break;
+		default:
+			break;
+	}
 }

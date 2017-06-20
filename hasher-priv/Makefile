@@ -22,7 +22,7 @@ VERSION = $(shell sed '/^Version: */!d;s///;q' hasher-priv.spec)
 HELPERS = getconf.sh getugid1.sh chrootuid1.sh getugid2.sh chrootuid2.sh makedev.sh maketty.sh
 MAN5PAGES = $(PROJECT).conf.5
 MAN8PAGES = $(PROJECT).8 hasher-useradd.8
-TARGETS = $(PROJECT) hasher-useradd $(HELPERS) $(MAN5PAGES) $(MAN8PAGES)
+TARGETS = $(PROJECT) hasher-privd hasher-useradd $(HELPERS) $(MAN5PAGES) $(MAN8PAGES)
 
 sysconfdir = /etc
 libexecdir = /usr/lib
@@ -32,6 +32,7 @@ man5dir = $(mandir)/man5
 man8dir = $(mandir)/man8
 configdir = $(sysconfdir)/$(PROJECT)
 helperdir = $(libexecdir)/$(PROJECT)
+socketdir = /var/run
 DESTDIR =
 
 MKDIR_P = mkdir -p
@@ -44,23 +45,33 @@ WARNINGS = -Wall -W -Wshadow -Wpointer-arith -Wwrite-strings \
 	-Wmissing-prototypes -Wmissing-declarations -Wmissing-noreturn \
 	-Wmissing-format-attribute -Wredundant-decls -Wdisabled-optimization
 CPPFLAGS = -std=gnu99 -D_GNU_SOURCE $(CHDIRUID_FLAGS) \
-	$(LFS_CFLAGS) -DPROJECT_VERSION=\"$(VERSION)\"
+	$(LFS_CFLAGS) -DPROJECT_VERSION=\"$(VERSION)\" \
+	-DSOCKETDIR=\"$(socketdir)\" -DPROJECT=\"$(PROJECT)\"
 CFLAGS = -pipe -O2
 override CFLAGS += $(WARNINGS)
 LDLIBS =
 
-SRC = caller.c chdir.c chdiruid.c chid.c child.c chrootuid.c cmdline.c \
-	config.c fds.c getconf.c getugid.c ipc.c killuid.c io_log.c io_x11.c \
-	main.c makedev.c mount.c net.c parent.c pass.c pty.c signal.c tty.c \
-	umount.c unshare.c xmalloc.c x11.c
+SRC = hasher-priv.c cmdline.c fds.c sockets.c logging.c
 OBJ = $(SRC:.c=.o)
-DEP = $(SRC:.c=.d)
+
+server_SRC = hasher-privd.c \
+	caller.c chdir.c chdiruid.c chid.c child.c chrootuid.c cmdline.c \
+	config.c fds.c getconf.c getugid.c ipc.c killuid.c io_log.c io_x11.c \
+	makedev.c mount.c net.c parent.c pass.c pty.c signal.c tty.c \
+	umount.c unshare.c xmalloc.c x11.c sockets.c logging.c \
+	connection.c tasks.c epoll.c logging.c pidfile.c
+server_OBJ = $(server_SRC:.c=.o)
+
+DEP = $(SRC:.c=.d) $(server_SRC:.c=.d)
 
 .PHONY:	all install clean indent
 
 all: $(TARGETS)
 
 $(PROJECT): $(OBJ)
+	$(LINK.o) $^ $(LOADLIBES) $(LDLIBS) -o $@
+
+hasher-privd: $(server_OBJ)
 	$(LINK.o) $^ $(LOADLIBES) $(LDLIBS) -o $@
 
 install: all
@@ -71,6 +82,7 @@ install: all
 	$(INSTALL) -p -m700 $(PROJECT) $(DESTDIR)$(helperdir)/
 	$(INSTALL) -p -m755 $(HELPERS) $(DESTDIR)$(helperdir)/
 	$(MKDIR_P) -m755 $(DESTDIR)$(sbindir)
+	$(INSTALL) -p -m755 hasher-privd $(DESTDIR)$(sbindir)/
 	$(INSTALL) -p -m755 hasher-useradd $(DESTDIR)$(sbindir)/
 	$(MKDIR_P) -m755 $(DESTDIR)$(man5dir)
 	$(INSTALL) -p -m644 $(MAN5PAGES) $(DESTDIR)$(man5dir)/
@@ -78,7 +90,7 @@ install: all
 	$(INSTALL) -p -m644 $(MAN8PAGES) $(DESTDIR)$(man8dir)/
 
 clean:
-	$(RM) $(TARGETS) $(DEP) $(OBJ) core *~
+	$(RM) $(TARGETS) $(DEP) $(OBJ) $(server_OBJ) core *~
 
 indent:
 	indent *.h *.c

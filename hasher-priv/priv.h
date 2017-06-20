@@ -29,21 +29,7 @@
 #define	MIN_CHANGE_GID	34
 #define	MAX_CONFIG_SIZE	16384
 
-typedef enum
-{
-	TASK_NONE = 0,
-	TASK_GETCONF,
-	TASK_KILLUID,
-	TASK_GETUGID1,
-	TASK_CHROOTUID1,
-	TASK_GETUGID2,
-	TASK_CHROOTUID2,
-	TASK_MAKEDEV,
-	TASK_MAKETTY,
-	TASK_MAKECONSOLE,
-	TASK_MOUNT,
-	TASK_UMOUNT
-} task_t;
+#include "tasks.h"
 
 typedef struct
 {
@@ -77,7 +63,8 @@ void    restore_tty(void);
 int     tty_copy_winsize(int master_fd, int slave_fd);
 int     open_pty(int *slave_fd, int chrooted, int verbose_error);
 task_t  parse_cmdline(int ac, const char *av[]);
-void    init_caller_data(void);
+void    parse_task_args(task_t task, const char *argv[]);
+void    init_caller_data(uid_t uid, gid_t gid);
 void    parse_env(void);
 void    configure(void);
 void    ch_uid(uid_t uid, uid_t *save);
@@ -137,6 +124,8 @@ int     do_umount(void);
 
 extern const char *chroot_path;
 extern const char **chroot_argv;
+
+extern const char **task_args;
 
 extern const char *single_mountpoint;
 extern const char *allowed_mountpoints;
