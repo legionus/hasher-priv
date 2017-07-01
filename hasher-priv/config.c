@@ -30,19 +30,24 @@
 #include <unistd.h>
 #include <limits.h>
 #include <pwd.h>
+#include <grp.h>
 
 #include "priv.h"
 #include "xmalloc.h"
+#include "logging.h"
 
 const char *const *chroot_prefix_list;
 const char *chroot_prefix_path;
 const char *allowed_mountpoints;
 const char *requested_mountpoints;
 const char *change_user1, *change_user2;
+const char *server_controlgroup;
+const char *server_pidfile;
 const char *term;
 const char *x11_display, *x11_key;
 uid_t   change_uid1, change_uid2;
 gid_t   change_gid1, change_gid2;
+gid_t   server_gid;
 mode_t  change_umask = 022;
 int change_nice = 8;
 int     allow_tty_devices, use_pty;
@@ -52,6 +57,7 @@ int share_ipc = -1;
 int share_mount = -1;
 int share_network = -1;
 int share_uts = -1;
+int server_log_priority = -1;
 change_rlimit_t change_rlimit[] = {
 
 /* Per-process CPU limit, in seconds.  */
@@ -628,4 +634,128 @@ parse_env(void)
 		free((char *) requested_mountpoints);
 		requested_mountpoints = parse_mountpoints(e, "environment");
 	}
+}
+
+static void
+check_server_controlgroup(void)
+{
+	struct group *gr;
+
+	if (!server_controlgroup || !*server_controlgroup)
+		error(EXIT_FAILURE, 0, "config: undefined: controlgroup");
+
+	gr = getgrnam(server_controlgroup);
+
+	if (!gr || !gr->gr_name)
+		error(EXIT_FAILURE, 0, "config: controlgroup: %s lookup failure", server_controlgroup);
+
+	server_gid = gr->gr_gid;
+}
+
+static void
+set_server_config(const char *name, const char *value, const char *filename)
+{
+	if (!strcasecmp("priority", name))
+		server_log_priority = logging_level(value);
+	else if (!strcasecmp("pidfile", name))
+	{
+		free((char *) server_pidfile);
+		server_pidfile = xstrdup(value);
+	} else if (!strcasecmp("controlgroup", name))
+	{
+		free((char *) server_controlgroup);
+		server_controlgroup = xstrdup(value);
+	} else
+		bad_option_name(name, filename);
+}
+
+static void
+read_server_config(int fd, const char *name)
+{
+	FILE   *fp = fdopen(fd, "r");
+	char    buf[BUFSIZ];
+	unsigned line;
+
+	if (!fp)
+		error(EXIT_FAILURE, errno, "fdopen: %s", name);
+
+	for (line = 1; fgets(buf, BUFSIZ, fp); ++line)
+	{
+		const char *start, *left;
+		char   *eq, *right, *end;
+
+		for (start = buf; *start && isspace(*start); ++start)
+			;
+
+		if (!*start || '#' == *start)
+			continue;
+
+		if (!(eq = strchr(start, '=')))
+			error(EXIT_FAILURE, 0, "%s: syntax error at line %u",
+			      name, line);
+
+		left = start;
+		right = eq + 1;
+
+		for (; eq > left; --eq)
+			if (!isspace(eq[-1]))
+				break;
+
+		if (left == eq)
+			error(EXIT_FAILURE, 0, "%s: syntax error at line %u",
+			      name, line);
+
+		*eq = '\0';
+		end = right + strlen(right);
+
+		for (; right < end; ++right)
+			if (!isspace(*right))
+				break;
+
+		for (; end > right; --end)
+			if (!isspace(end[-1]))
+				break;
+
+		*end = '\0';
+		set_server_config(left, right, name);
+	}
+
+	if (ferror(fp))
+		error(EXIT_FAILURE, errno, "fgets: %s", name);
+}
+
+static void
+load_server_config(const char *name)
+{
+	struct stat st;
+	int     fd = open(name, O_RDONLY | O_NOFOLLOW | O_NOCTTY);
+
+	if (fd < 0)
+		error(EXIT_FAILURE, errno, "open: %s", name);
+
+	if (fstat(fd, &st) < 0)
+		error(EXIT_FAILURE, errno, "fstat: %s", name);
+
+	stat_root_ok_validator(&st, name);
+
+	if (!S_ISREG(st.st_mode))
+		error(EXIT_FAILURE, 0, "%s: not a regular file", name);
+
+	if (st.st_size > MAX_CONFIG_SIZE)
+		error(EXIT_FAILURE, 0, "%s: file too large: %lu",
+		      name, (unsigned long) st.st_size);
+
+	read_server_config(fd, name);
+
+	if (close(fd) < 0)
+		error(EXIT_FAILURE, errno, "close: %s", name);
+}
+
+void
+configure_server(void)
+{
+	safe_chdir("/", stat_root_ok_validator);
+	safe_chdir("etc/hasher-priv", stat_root_ok_validator);
+	load_server_config("server");
+	check_server_controlgroup();
 }

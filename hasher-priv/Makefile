@@ -78,6 +78,7 @@ install: all
 	$(MKDIR_P) -m710 $(DESTDIR)$(configdir)/user.d
 	$(INSTALL) -p -m640 fstab $(DESTDIR)$(configdir)/fstab
 	$(INSTALL) -p -m640 system.conf $(DESTDIR)$(configdir)/system
+	$(INSTALL) -p -m640 server.conf $(DESTDIR)$(configdir)/server
 	$(MKDIR_P) -m750 $(DESTDIR)$(helperdir)
 	$(INSTALL) -p -m700 $(PROJECT) $(DESTDIR)$(helperdir)/
 	$(INSTALL) -p -m755 $(HELPERS) $(DESTDIR)$(helperdir)/

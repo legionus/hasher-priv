@@ -21,6 +21,7 @@
 #include "pidfile.h"
 #include "tasks.h"
 #include "sockets.h"
+#include "priv.h"
 
 unsigned caller_num;
 
@@ -56,6 +57,7 @@ int main(int argc, char **argv)
 {
 	int i;
 	sigset_t mask;
+	mode_t m;
 
 	int ep_timeout = -1;
 
@@ -63,7 +65,7 @@ int main(int argc, char **argv)
 	int fd_signal = -1;
 	int fd_conn   = -1;
 
-	int loglevel = 0;
+	int loglevel = -1;
 
 	const char *pidfile = NULL;
 	int daemonize = 1;
@@ -107,7 +109,15 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (!loglevel)
+	configure_server();
+
+	if (!pidfile && server_pidfile && *server_pidfile)
+		pidfile = server_pidfile;
+
+	if (server_log_priority >= 0)
+		loglevel = server_log_priority;
+
+	if (loglevel < 0)
 		loglevel = logging_level("info");
 
 	umask(022);
@@ -136,13 +146,17 @@ int main(int argc, char **argv)
 	if ((fd_signal = signalfd(-1, &mask, SFD_NONBLOCK | SFD_CLOEXEC)) < 0)
 		fatal("signalfd: %m");
 
+	m = umask(017);
+
 	if ((fd_conn = unix_listen(SOCKETDIR, PROJECT)) < 0)
 		return EXIT_FAILURE;
 
+	umask(m);
+
 	snprintf(socketpath, sizeof(socketpath), "%s/%s", SOCKETDIR, PROJECT);
 
-	if (chmod(socketpath, 0666))
-		fatal("chmod: %s: %m", socketpath);
+	if (chown(socketpath, 0, server_gid))
+		fatal("fchown: %s: %m", socketpath);
 
 	if (set_passcred(fd_conn) < 0)
 		return EXIT_FAILURE;

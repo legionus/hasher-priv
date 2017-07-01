@@ -67,6 +67,7 @@ void    parse_task_args(task_t task, const char *argv[]);
 void    init_caller_data(uid_t uid, gid_t gid);
 void    parse_env(void);
 void    configure(void);
+void    configure_server(void);
 void    ch_uid(uid_t uid, uid_t *save);
 void    ch_gid(gid_t gid, gid_t *save);
 void    chdiruid(const char *path);
@@ -157,5 +158,10 @@ extern mode_t change_umask;
 extern int change_nice;
 extern change_rlimit_t change_rlimit[];
 extern work_limit_t wlimit;
+
+extern int server_log_priority;
+extern const char *server_controlgroup;
+extern const char *server_pidfile;
+extern gid_t server_gid;
 
 #endif /* PKG_BUILD_PRIV_H */
