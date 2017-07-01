@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <stdarg.h>
 #include <strings.h>
 #include <errno.h>
@@ -5,7 +6,7 @@
 
 #include "logging.h"
 
-int log_priority = 0;
+int log_priority = -1;
 
 int logging_level(const char *name)
 {
@@ -27,7 +28,7 @@ int logging_level(const char *name)
 void logging_init(int loglevel)
 {
 	log_priority = loglevel;
-	openlog(program_invocation_short_name, LOG_PID | LOG_PERROR, LOG_DAEMON);
+	openlog(program_invocation_short_name, LOG_PID, LOG_DAEMON);
 }
 
 void logging_close(void)
@@ -40,10 +41,12 @@ message(int priority, const char *fmt, ...)
 {
 	va_list ap;
 
-	if (priority > log_priority)
-		return;
-
 	va_start(ap, fmt);
-	vsyslog(priority, fmt, ap);
+	if (priority <= log_priority)
+		vsyslog(priority, fmt, ap);
+	else if (log_priority < 0) {
+		vfprintf(stderr, fmt, ap);
+		fprintf(stderr, "\n");
+	}
 	va_end(ap);
 }

@@ -50,9 +50,6 @@ main(int ac, const char *av[], const char *ev[])
 	/* Second, parse command line arguments. */
 	task = parse_cmdline(ac, av);
 
-	// FIXME
-	logging_init(logging_level("debug"));
-
 	/* Connect to remote server. */
 	if ((conn = unix_connect(SOCKETDIR, PROJECT)) < 0)
 		return EXIT_FAILURE;
