@@ -1,0 +1,86 @@
+#! /bin/sh
+
+### BEGIN INIT INFO
+# Short-Description:    A privileged helper for the hasher project
+# Description:          A privileged helper for the hasher project
+# Provides:             hasher-priv
+# Required-Start:       $remote_fs
+# Required-Stop:        $remote_fs
+# Default-Start:        2 3 4 5
+# Default-Stop:         0 1 6
+### END INIT INFO
+
+WITHOUT_RC_COMPAT=1
+
+# Source function library.
+. /etc/init.d/functions
+
+NAME=hasher-privd
+PIDFILE="/var/run/$NAME.pid"
+LOCKFILE="/var/lock/subsys/$NAME"
+RETVAL=0
+
+start()
+{
+	start_daemon --pidfile "$PIDFILE" --lockfile "$LOCKFILE" -- "$NAME"
+	RETVAL=$?
+	return $RETVAL
+}
+
+stop()
+{
+	stop_daemon --pidfile "$PIDFILE" --lockfile "$LOCKFILE" "$NAME"
+	RETVAL=$?
+	return $RETVAL
+}
+
+restart()
+{
+	stop
+	start
+}
+
+# See how we were called.
+case "$1" in
+	start)
+		start
+		;;
+	stop)
+		stop
+		;;
+	status)
+		status --pidfile "$PIDFILE" "$NAME"
+		RETVAL=$?
+		;;
+	restart)
+		restart
+		;;
+	reload)
+		restart
+		;;
+	condstart)
+		if [ ! -e "$LOCKFILE" ]; then
+			start
+		fi
+		;;
+	condstop)
+		if [ -e "$LOCKFILE" ]; then
+			stop
+		fi
+		;;
+	condrestart)
+		if [ -e "$LOCKFILE" ]; then
+			restart
+		fi
+		;;
+	condreload)
+		if [ -e "$LOCKFILE" ]; then
+			reload
+		fi
+		;;
+	*)
+		msg_usage "${0##*/} {start|stop|status|restart|reload|condstart|condstop|condrestart|condreload}"
+		RETVAL=1
+esac
+
+exit $RETVAL

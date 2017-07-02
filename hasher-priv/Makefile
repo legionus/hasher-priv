@@ -25,6 +25,8 @@ MAN8PAGES = $(PROJECT).8 hasher-useradd.8
 TARGETS = $(PROJECT) hasher-privd hasher-useradd $(HELPERS) $(MAN5PAGES) $(MAN8PAGES)
 
 sysconfdir = /etc
+initdir=$(sysconfdir)/rc.d/init.d
+systemd_unitdir=/lib/systemd/system
 libexecdir = /usr/lib
 sbindir = /usr/sbin
 mandir = /usr/share/man
@@ -82,6 +84,8 @@ install: all
 	$(MKDIR_P) -m750 $(DESTDIR)$(helperdir)
 	$(INSTALL) -p -m700 $(PROJECT) $(DESTDIR)$(helperdir)/
 	$(INSTALL) -p -m755 $(HELPERS) $(DESTDIR)$(helperdir)/
+	$(MKDIR_P) -m755 $(DESTDIR)$(initdir)
+	$(INSTALL) -p -m755 hasher-privd.sysvinit $(DESTDIR)$(initdir)/hasher-privd
 	$(MKDIR_P) -m755 $(DESTDIR)$(sbindir)
 	$(INSTALL) -p -m755 hasher-privd $(DESTDIR)$(sbindir)/
 	$(INSTALL) -p -m755 hasher-useradd $(DESTDIR)$(sbindir)/

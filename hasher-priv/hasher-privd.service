@@ -1,0 +1,11 @@
+[Unit]
+Description=A privileged helper for the hasher project
+ConditionVirtualization=!container
+Documentation=man:hasher-priv(8)
+
+[Service]
+ExecStart=/usr/sbin/hasher-privd
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
