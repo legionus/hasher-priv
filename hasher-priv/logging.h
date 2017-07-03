@@ -15,7 +15,7 @@
 #include <syslog.h>
 #include <stdlib.h>
 
-void logging_init(int);
+void logging_init(int, int);
 void logging_close(void);
 int logging_level(const char *lvl);
 

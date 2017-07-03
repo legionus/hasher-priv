@@ -25,10 +25,13 @@ int logging_level(const char *name)
 	return 0;
 }
 
-void logging_init(int loglevel)
+void logging_init(int loglevel, int stderr)
 {
+	int options = LOG_PID;
+	if (stderr)
+		options |= LOG_PERROR;
 	log_priority = loglevel;
-	openlog(program_invocation_short_name, LOG_PID, LOG_DAEMON);
+	openlog(program_invocation_short_name, options, LOG_DAEMON);
 }
 
 void logging_close(void)

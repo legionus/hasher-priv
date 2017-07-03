@@ -129,7 +129,7 @@ int main(int argc, char **argv)
 	if (daemonize && daemon(0, 0) < 0)
 		error(EXIT_FAILURE, errno, "daemon");
 
-	logging_init(loglevel);
+	logging_init(loglevel, !daemonize);
 
 	if (pidfile && write_pid(pidfile) == 0)
 		return EXIT_FAILURE;
