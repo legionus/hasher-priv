@@ -153,6 +153,12 @@ recv_task_hdr(int conn, struct nettask *task)
 		err("too many arguments for %s task", task2str(task->type));
 		rc = -1;
 	}
+
+	if ((task->argslen + task->envslen) > _POSIX_ARG_MAX) {
+		err("too many arguments and environment variables");
+		rc = -1;
+		goto out;
+	}
 out:
 	free(msg.msg_control);
 	free(recv_buf);
