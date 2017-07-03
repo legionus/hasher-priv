@@ -22,10 +22,10 @@ struct taskhdr {
 	task_t type;
 	unsigned caller_num;
 
-	uint64_t argc;
+	int argc;
 	uint64_t argslen;
 
-	uint64_t envc;
+	int envc;
 	uint64_t envslen;
 };
 

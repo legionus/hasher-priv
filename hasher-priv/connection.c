@@ -31,12 +31,12 @@ struct nettask {
 	char **env;
 
 	/* conatainer for client args */
-	uint64_t argc;
+	int argc;
 	uint64_t argslen;
 	char *args;
 
 	/* conatainer for client envs */
-	uint64_t envc;
+	int envc;
 	uint64_t envslen;
 	char *envs;
 };
@@ -73,11 +73,11 @@ recv_task_hdr(int conn, struct nettask *task)
 	struct msghdr msg = {};
 	struct iovec iov  = {};
 	char *recv_buf;
-	unsigned required_args = 0, more_args = 0;
+	int required_args = 0, more_args = 0;
 
 	ssize_t n;
 
-	int rc     = 0;
+	int rc = -1;
 
 	task->stdin  = -1;
 	task->stdout = -1;
@@ -103,14 +103,13 @@ recv_task_hdr(int conn, struct nettask *task)
 			else
 				err("recvmsg: unexpected EOF");
 		}
-		rc = -1;
 		goto out;
 	}
 
-	if ((rc = recv_credentials(&msg, NULL, &task->uid, &task->gid)) < 0)
+	if (recv_credentials(&msg, NULL, &task->uid, &task->gid) < 0)
 		goto out;
 
-	if ((rc = recv_iostreams(&msg, &task->stdin, &task->stdout, &task->stderr)) < 0)
+	if (recv_iostreams(&msg, &task->stdin, &task->stdout, &task->stderr) < 0)
 		goto out;
 
 	task->type    = ((struct taskhdr *)recv_buf)->type;
@@ -141,24 +140,26 @@ recv_task_hdr(int conn, struct nettask *task)
 			break;
 		default:
 			err("unknown task type: %lu", task->type);
-			rc = -1;
 			goto out;
 	}
 
-	if (task->argc < required_args) {
+	if (task->argc < 0)
+		err("number of arguments must be a positive");
+
+	else if (task->envc < 0)
+		err("number of environment variables must be a positive");
+
+	else if (task->argc < required_args)
 		err("%s task requires at least %u arguments", task2str(task->type), required_args);
-		rc = -1;
 
-	} else if (task->argc > required_args && !more_args) {
+	else if (task->argc > required_args && !more_args)
 		err("too many arguments for %s task", task2str(task->type));
-		rc = -1;
-	}
 
-	if ((task->argslen + task->envslen) > _POSIX_ARG_MAX) {
+	else if ((task->argslen + task->envslen) > _POSIX_ARG_MAX)
 		err("too many arguments and environment variables");
-		rc = -1;
-		goto out;
-	}
+
+	else
+		rc = 0;
 out:
 	free(msg.msg_control);
 	free(recv_buf);
@@ -197,13 +198,11 @@ recv_data(int conn, uid_t want_uid, gid_t want_gid, char **data, uint64_t len)
 				err("recvmsg: unexpected EOF");
 		}
 		free(msg.msg_control);
-		free(*data);
 		return -1;
 	}
 
 	if (recv_credentials(&msg, NULL, &uid, &gid) < 0) {
 		free(msg.msg_control);
-		free(*data);
 		return -1;
 	}
 
@@ -211,7 +210,6 @@ recv_data(int conn, uid_t want_uid, gid_t want_gid, char **data, uint64_t len)
 
 	if (want_uid != uid || want_gid != gid) {
 		err("task and arguments do not belong to same user");
-		free(*data);
 		return -1;
 	}
 
@@ -221,21 +219,21 @@ recv_data(int conn, uid_t want_uid, gid_t want_gid, char **data, uint64_t len)
 static int
 recv_task_args(int conn, struct nettask *task)
 {
-	uint64_t i, n = 0;
+	int i;
+	uint64_t n = 0;
 
 	if (recv_data(conn, task->uid, task->gid, &task->args, task->argslen) < 0)
 		return -1;
 
-	task->argv = xcalloc(task->argc + 1, sizeof(char *));
+	task->argv = xcalloc((size_t) task->argc + 1, sizeof(char *));
 
 	for (i = 0; i < task->argc; i++) {
 		if (task->argslen < n) {
 			err("wrong arguments length. Not null-terminated string?");
-			free(task->argv);
 			return -1;
 		}
 		task->argv[i] = task->args + n;
-		n += strlen(task->args + n) + 1;
+		n += strnlen(task->args + n, task->argslen - n + 1) + 1;
 	}
 
 	return 0;
@@ -244,12 +242,13 @@ recv_task_args(int conn, struct nettask *task)
 static int
 recv_task_envs(int conn, struct nettask *task)
 {
-	uint64_t i, n = 0;
+	int i;
+	uint64_t n = 0;
 
 	if (recv_data(conn, task->uid, task->gid, &task->envs, task->envslen) < 0)
 		return -1;
 
-	task->env = xcalloc(task->envc + 1, sizeof(char *));
+	task->env = xcalloc((size_t) task->envc + 1, sizeof(char *));
 
 	for (i = 0; i < task->envc; i++) {
 		if (task->envslen < n) {
@@ -257,7 +256,7 @@ recv_task_envs(int conn, struct nettask *task)
 			return -1;
 		}
 		task->env[i] = task->envs + n;
-		n += strlen(task->envs + n) + 1;
+		n += strnlen(task->envs + n, task->envslen - n + 1) + 1;
 	}
 
 	return 0;
