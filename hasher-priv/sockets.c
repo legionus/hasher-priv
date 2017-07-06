@@ -77,14 +77,25 @@ int unix_connect(const char *dir_name, const char *file_name)
 	return conn;
 }
 
-int set_passcred(int fd)
+int get_peercred(int fd, pid_t *pid, uid_t *uid, gid_t *gid)
 {
-	int enable = 1;
+	struct ucred uc;
+	socklen_t len = sizeof(struct ucred);
 
-	if (setsockopt(fd, SOL_SOCKET, SO_PASSCRED, &enable, sizeof(enable)) < 0) {
-		err("setsockopt(SO_PASSCRED): %m");
+	if (getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &uc, &len) < 0) {
+		err("getsockopt(SO_PEERCRED): %m");
 		return -1;
 	}
+
+	if (pid)
+		*pid = uc.pid;
+
+	if (uid)
+		*uid = uc.uid;
+
+	if (gid)
+		*gid = uc.gid;
+
 	return 0;
 }
 
@@ -117,40 +128,6 @@ int recv_iostreams(struct msghdr *msg, int *stdin, int *stdout, int *stderr)
 
 		if (stderr)
 			*stderr = fds[2];
-	}
-
-	return 0;
-}
-
-int recv_credentials(struct msghdr *msg, pid_t *pid, uid_t *uid, gid_t *gid)
-{
-	struct cmsghdr *cmsg;
-	struct ucred *cr;
-
-	if (!msg->msg_controllen) {
-		err("ancillary data not specified");
-		return -1;
-	}
-
-	for (cmsg = CMSG_FIRSTHDR(msg); cmsg; cmsg = CMSG_NXTHDR(msg, cmsg)) {
-		if (cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_CREDENTIALS)
-			continue;
-
-		if (cmsg->cmsg_len - CMSG_LEN(0) != sizeof(struct ucred)) {
-			err("expected rights payload");
-			return -1;
-		}
-
-		cr = (struct ucred *)(CMSG_DATA(cmsg));
-
-		if (pid)
-			*pid = cr->pid;
-
-		if (uid)
-			*uid = cr->uid;
-
-		if (gid)
-			*gid = cr->gid;
 	}
 
 	return 0;

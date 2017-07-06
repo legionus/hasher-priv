@@ -90,7 +90,7 @@ recv_task_hdr(int conn, struct nettask *task)
 
 	msg.msg_iov        = &iov;
 	msg.msg_iovlen     = 1;
-	msg.msg_controllen = CMSG_SPACE(sizeof(struct ucred)) + CMSG_SPACE(sizeof(int64_t) * 2);
+	msg.msg_controllen = CMSG_SPACE(sizeof(int) * 3);
 
 	msg.msg_control = xcalloc(1UL, msg.msg_controllen);
 
@@ -106,7 +106,7 @@ recv_task_hdr(int conn, struct nettask *task)
 		goto out;
 	}
 
-	if (recv_credentials(&msg, NULL, &task->uid, &task->gid) < 0)
+	if (get_peercred(conn, NULL, &task->uid, &task->gid) < 0)
 		goto out;
 
 	if (recv_iostreams(&msg, &task->stdin, &task->stdout, &task->stderr) < 0)
@@ -168,12 +168,10 @@ out:
 }
 
 static int
-recv_data(int conn, uid_t want_uid, gid_t want_gid, char **data, uint64_t len)
+recv_data(int conn, char **data, uint64_t len)
 {
 	struct msghdr msg = {};
 	struct iovec iov = {};
-	uid_t uid = 0;
-	gid_t gid = 0;
 
 	ssize_t n;
 
@@ -182,11 +180,9 @@ recv_data(int conn, uid_t want_uid, gid_t want_gid, char **data, uint64_t len)
 	iov.iov_base = *data;
 	iov.iov_len  = len;
 
-	msg.msg_name       = NULL;
-	msg.msg_iov        = &iov;
-	msg.msg_iovlen     = 1;
-	msg.msg_controllen = CMSG_SPACE(sizeof(struct ucred));
-	msg.msg_control    = xcalloc(1UL, msg.msg_controllen);
+	msg.msg_name   = NULL;
+	msg.msg_iov    = &iov;
+	msg.msg_iovlen = 1;
 
 	if ((n = TEMP_FAILURE_RETRY(recvmsg(conn, &msg, 0))) != (ssize_t) iov.iov_len) {
 		if (n < 0) {
@@ -197,19 +193,6 @@ recv_data(int conn, uid_t want_uid, gid_t want_gid, char **data, uint64_t len)
 			else
 				err("recvmsg: unexpected EOF");
 		}
-		free(msg.msg_control);
-		return -1;
-	}
-
-	if (recv_credentials(&msg, NULL, &uid, &gid) < 0) {
-		free(msg.msg_control);
-		return -1;
-	}
-
-	free(msg.msg_control);
-
-	if (want_uid != uid || want_gid != gid) {
-		err("task and arguments do not belong to same user");
 		return -1;
 	}
 
@@ -222,7 +205,7 @@ recv_task_args(int conn, struct nettask *task)
 	int i;
 	uint64_t n = 0;
 
-	if (recv_data(conn, task->uid, task->gid, &task->args, task->argslen) < 0)
+	if (recv_data(conn, &task->args, task->argslen) < 0)
 		return -1;
 
 	task->argv = xcalloc((size_t) task->argc + 1, sizeof(char *));
@@ -245,7 +228,7 @@ recv_task_envs(int conn, struct nettask *task)
 	int i;
 	uint64_t n = 0;
 
-	if (recv_data(conn, task->uid, task->gid, &task->envs, task->envslen) < 0)
+	if (recv_data(conn, &task->envs, task->envslen) < 0)
 		return -1;
 
 	task->env = xcalloc((size_t) task->envc + 1, sizeof(char *));

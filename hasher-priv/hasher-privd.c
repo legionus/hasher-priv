@@ -158,9 +158,6 @@ int main(int argc, char **argv)
 	if (chown(socketpath, 0, server_gid))
 		fatal("fchown: %s: %m", socketpath);
 
-	if (set_passcred(fd_conn) < 0)
-		return EXIT_FAILURE;
-
 	if (epollin_add(fd_ep, fd_signal) < 0 || epollin_add(fd_ep, fd_conn) < 0)
 		return EXIT_FAILURE;
 
