@@ -30,6 +30,7 @@
 
 #include "priv.h"
 #include "xmalloc.h"
+#include "logging.h"
 
 const char *caller_user, *caller_home;
 uid_t   caller_uid;
@@ -38,41 +39,50 @@ gid_t   caller_gid;
 /*
  * Initialize caller_user, caller_uid, caller_gid and caller_home.
  */
-void
+int
 init_caller_data(uid_t uid, gid_t gid)
 {
 	struct passwd *pw = 0;
 
 	caller_uid = uid;
-	if (caller_uid < MIN_CHANGE_UID)
-		error(EXIT_FAILURE, 0, "caller has invalid uid: %u",
-		      caller_uid);
+	if (caller_uid < MIN_CHANGE_UID) {
+		err("caller has invalid uid: %u", caller_uid);
+		return -1;
+	}
 
 	caller_gid = gid;
-	if (caller_gid < MIN_CHANGE_GID)
-		error(EXIT_FAILURE, 0, "caller has invalid gid: %u",
-		      caller_gid);
+	if (caller_gid < MIN_CHANGE_GID) {
+		err("caller has invalid gid: %u", caller_gid);
+		return -1;
+	}
 
 	pw = getpwuid(caller_uid);
 
-	if (!pw || !pw->pw_name)
-		error(EXIT_FAILURE, 0, "caller lookup failure");
+	if (!pw || !pw->pw_name) {
+		err("caller lookup failure");
+		return -1;
+	}
 
 	caller_user = xstrdup(pw->pw_name);
 
-	if (caller_uid != pw->pw_uid)
-		error(EXIT_FAILURE, 0, "caller %s: uid mismatch",
-		      caller_user);
+	if (caller_uid != pw->pw_uid) {
+		err("caller %s: uid mismatch", caller_user);
+		return -1;
+	}
 
-	if (caller_gid != pw->pw_gid)
-		error(EXIT_FAILURE, 0, "caller %s: gid mismatch",
-		      caller_user);
+	if (caller_gid != pw->pw_gid) {
+		err("caller %s: gid mismatch", caller_user);
+		return -1;
+	}
 
 	errno = 0;
 	if (pw->pw_dir && *pw->pw_dir)
 		caller_home = canonicalize_file_name(pw->pw_dir);
 
-	if (!caller_home || !*caller_home)
-		error(EXIT_FAILURE, errno, "caller %s: invalid home",
-		      caller_user);
+	if (!caller_home || !*caller_home) {
+		err("caller %s: invalid home: %m", caller_user);
+		return -1;
+	}
+
+	return 0;
 }

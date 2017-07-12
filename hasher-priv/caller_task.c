@@ -12,7 +12,6 @@
 #include "xmalloc.h"
 #include "logging.h"
 #include "sockets.h"
-#include "connection.h"
 #include "priv.h"
 
 struct nettask {
@@ -283,9 +282,6 @@ process_task(struct nettask *task)
 	if (chroot_path && *chroot_path != '/')
 		fatal("%s: invalid chroot path", chroot_path);
 
-	/* Third, initialize data related to caller. */
-	init_caller_data(task->uid, task->gid);
-
 	/* Fourth, parse environment for config options. */
 	parse_env();
 
@@ -343,7 +339,7 @@ process_task(struct nettask *task)
 }
 
 int
-handle_connection(int conn)
+caller_task(int conn)
 {
 	int rc = EXIT_FAILURE;
 	struct nettask task = {};

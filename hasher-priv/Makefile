@@ -57,11 +57,12 @@ SRC = hasher-priv.c cmdline.c fds.c sockets.c logging.c
 OBJ = $(SRC:.c=.o)
 
 server_SRC = hasher-privd.c \
-	caller.c chdir.c chdiruid.c chid.c child.c chrootuid.c cmdline.c \
+	caller.c caller_server.c caller_task.c chdir.c chdiruid.c \
+	chid.c child.c chrootuid.c cmdline.c \
 	config.c fds.c getconf.c getugid.c ipc.c killuid.c io_log.c io_x11.c \
 	makedev.c mount.c net.c parent.c pass.c pty.c signal.c tty.c \
 	umount.c unshare.c xmalloc.c x11.c sockets.c logging.c \
-	connection.c tasks.c epoll.c logging.c pidfile.c
+	tasks.c epoll.c logging.c pidfile.c
 server_OBJ = $(server_SRC:.c=.o)
 
 DEP = $(SRC:.c=.d) $(server_SRC:.c=.d)

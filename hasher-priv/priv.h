@@ -64,7 +64,7 @@ int     tty_copy_winsize(int master_fd, int slave_fd);
 int     open_pty(int *slave_fd, int chrooted, int verbose_error);
 task_t  parse_cmdline(int ac, const char *av[]);
 void    parse_task_args(task_t task, const char *argv[]);
-void    init_caller_data(uid_t uid, gid_t gid);
+int     init_caller_data(uid_t uid, gid_t gid);
 void    parse_env(void);
 void    configure(void);
 void    configure_server(void);
@@ -122,6 +122,9 @@ int     do_makedev(void);
 int     do_maketty(void);
 int     do_mount(void);
 int     do_umount(void);
+
+int caller_task(int);
+pid_t fork_server(int, uid_t, gid_t);
 
 extern const char *chroot_path;
 extern const char **chroot_argv;

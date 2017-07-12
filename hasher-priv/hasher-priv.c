@@ -20,6 +20,8 @@
 
 /* Code in this file may be executed with root privileges. */
 
+#include <sys/param.h> /* MAXPATHLEN */
+
 #include <errno.h>
 #include <error.h>
 #include <stdio.h>
@@ -41,6 +43,7 @@ main(int ac, const char *av[], const char *ev[])
 {
 	int     conn, rc;
 	task_t  task;
+	char socketname[MAXPATHLEN];
 
 	error_print_progname = my_error_print_progname;
 
@@ -52,6 +55,17 @@ main(int ac, const char *av[], const char *ev[])
 
 	/* Connect to remote server. */
 	if ((conn = unix_connect(SOCKETDIR, PROJECT)) < 0)
+		return EXIT_FAILURE;
+
+	if (recv_answer(conn, &rc) < 0 || rc != 0)
+		fatal("unable to start user-specific server");
+
+	/* Close master socket */
+	close(conn);
+
+	snprintf(socketname, sizeof(socketname), "hasher-priv-%d", geteuid());
+
+	if ((conn = unix_connect(SOCKETDIR, socketname)) < 0)
 		return EXIT_FAILURE;
 
 	if (send_hdr(conn, task, caller_num, task_args, ev) < 0)

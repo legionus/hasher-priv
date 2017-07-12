@@ -12,10 +12,10 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 #include <unistd.h>
 
-#include "connection.h"
 #include "epoll.h"
 #include "logging.h"
 #include "pidfile.h"
@@ -23,34 +23,104 @@
 #include "sockets.h"
 #include "priv.h"
 
+struct session {
+	struct session *next;
+
+	uid_t caller_uid;
+	gid_t caller_gid;
+
+	pid_t server_pid;
+};
+
+static int finish_server = 0;
+static struct session *pool = NULL;
+
 unsigned caller_num;
+
+
+static int
+start_session(int conn)
+{
+	uid_t uid;
+	gid_t gid;
+	pid_t server_pid;
+	struct session **a = &pool;
+
+	if (get_peercred(conn, NULL, &uid, &gid) < 0)
+		return -1;
+
+	while (a && *a) {
+		if ((*a)->caller_uid == uid) {
+			send_answer(conn, 0);
+			return 0;
+		}
+		a = &(*a)->next;
+	}
+
+	if ((server_pid = fork_server(conn, uid, gid)) < 0)
+		return -1;
+
+	*a = calloc(1L, sizeof(struct session));
+
+	(*a)->caller_uid = uid;
+	(*a)->caller_gid = gid;
+	(*a)->server_pid = server_pid;
+
+	return 0;
+}
+
+static void
+close_session(pid_t pid)
+{
+	struct session *x, **a = &pool;
+
+	while (a && *a) {
+		if ((*a)->server_pid == pid) {
+			x = *a;
+			*a = (*a)->next;
+			free(x);
+		}
+		a = &(*a)->next;
+	}
+}
+
+static void
+finish_sessions(int sig)
+{
+	struct session *e = pool;
+
+	while (e) {
+		if (kill(e->server_pid, sig) < 0)
+			err("kill: %m");
+		e = e->next;
+	}
+}
 
 static int
 handle_signal(uint32_t signo)
 {
+	pid_t pid;
+	int status;
+
 	switch (signo) {
 		case SIGINT:
 		case SIGTERM:
-			return 0;
+			finish_server = 1;
+			break;
 
 		case SIGCHLD:
-			while (1) {
-				int status;
-
-				errno = 0;
-				if (waitpid(-1, &status, 0) < 0) {
-					if (errno == ECHILD)
-						break;
-					err("waitpid: %m");
-					return -1;
-				}
+			if ((pid = waitpid(-1, &status, 0)) < 0) {
+				err("waitpid: %m");
+				return -1;
 			}
+
+			close_session(pid);
 			break;
 
 		case SIGHUP:
 			break;
 	}
-	return 1;
+	return 0;
 }
 
 int main(int argc, char **argv)
@@ -59,6 +129,7 @@ int main(int argc, char **argv)
 	sigset_t mask;
 	mode_t m;
 
+	int sig = SIGTERM;
 	int ep_timeout = -1;
 
 	int fd_ep     = -1;
@@ -187,8 +258,7 @@ int main(int argc, char **argv)
 					continue;
 				}
 
-				if (handle_signal(fdsi.ssi_signo) < 1)
-					goto out;
+				handle_signal(fdsi.ssi_signo);
 
 			} else if (ev[i].data.fd == fd_conn) {
 				int conn;
@@ -198,15 +268,28 @@ int main(int argc, char **argv)
 					continue;
 				}
 
-				handle_connection(conn);
+				start_session(conn);
+
 				close(conn);
 			}
 		}
+
+		if (finish_server) {
+			if (!pool)
+				break;
+
+			if (fd_conn >= 0) {
+				epollin_remove(fd_ep, fd_conn);
+				fd_conn = -1;
+				ep_timeout = 3000;
+			}
+
+			finish_sessions(sig);
+		}
 	}
-out:
+
 	if (fd_ep >= 0) {
 		epollin_remove(fd_ep, fd_signal);
-		epollin_remove(fd_ep, fd_conn);
 		close(fd_ep);
 	}
 
