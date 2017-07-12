@@ -10,7 +10,10 @@ Here is a hasher-priv (euid=user,egid=hashman,gid!=egid) control flow:
     + caller_num initialized here
   + parse arguments, abort if wrong
 + connect to /var/run/hasher-priv socket
-+ send task to server with UNIX credentials
+  + wait for the creation of a session server
+  + close socket
++ connect to session server by /var/run/hasher-priv-UID socket
++ send task to server
   + send task header
     + send current stdout and stderr to server
   + send task arguments
@@ -32,18 +35,45 @@ Here is a hasher-privd (euid=root,egid=hashman,gid==egid) control flow:
 + I/O event notification and add file descriptors
   + create a file descriptor for accepting signals
   + create and listen server socket
-    + allow send or receive UNIX credentials
-+ wait for incomming events
++ wait for incomming caller connections
   + handle signal if signal is received
-  + handle connection if the client opened a new connection
-    + fork new process
+    + close caller's session
+  + handle connection if the caller opened a new connection
+    + get connection credentials
+    + fork new process for caller if don't have any
+    + notify the client if the session server already running
+    + close caller connection
 + close all descriptors in notification poll
 + close and remove pidfile
 
-Here is control flow for server connection handler:
+Here is control flow for session server:
++ initialize data related to caller
+  + caller_uid initialized here by uid received via the socket
+    + caller_uid must be valid uid
+  + caller_gid initialized here by uid received via the socket
+    + caller_gid must be valid gid
+  + caller_user initialized here from getpwuid(caller_uid)->pw_name
+    + must be true: caller_uid == pw->pw_uid
+    + must be true: caller_gid == pw->pw_gid
+  + caller_home initialized here
+    + caller_user's home directory must exist
++ set safe umask
++ open a caller-specific socket
++ I/O event notification and add file descriptors
+  + create a file descriptor for accepting signals
+  + create and listen the session socket
++ notify the client that the session server is ready
++ wait for incomming caller connections
+  + handle signal if signal is received
+  + handle connection if the caller opened a new connection
+    + task handler
+    + reset timeout timer
+  + finish the server if the task doesn't arrive from the caller
+    for more than a minute.
+
+Here is control flow for the task handler:
 + drop all environment variables
 + receive task header
-  + receive UNIX credentials
   + receive client's stdin, stdout and stderr
   + check number of arguments
 + receive task arguments if we expect them
@@ -72,16 +102,6 @@ Here is control flow for server connection handler:
           umount <chroot path>
       + caller_num initialized here
     + chroot_path and chroot_argv are initialized here
-    + initialize data related to caller
-      + caller_uid initialized here by uid received via the socket
-        + caller_uid must be valid uid
-      + caller_gid initialized here by uid received via the socket
-        + caller_gid must be valid gid
-      + caller_user initialized here from getpwuid(caller_uid)->pw_name
-        + must be true: caller_uid == pw->pw_uid
-        + must be true: caller_gid == pw->pw_gid
-      + caller_home initialized here
-        + caller_user's home directory must exist
     + read work limit hints from environment variables
     + drop all environment variables
     + load configuration
