@@ -14,8 +14,6 @@
 #include "logging.h"
 #include "epoll.h"
 
-#define SERVER_TIMEOUT_NSECS 60
-
 static int finish_server = 0;
 static char socketpath[MAXPATHLEN];
 
@@ -46,7 +44,8 @@ handle_signal(uint32_t signo)
 static int
 caller_server(int cl_conn, uid_t uid, gid_t gid)
 {
-	int i, nsec;
+	int i;
+	unsigned long nsec;
 	sigset_t mask;
 	char *sockname;
 
@@ -110,7 +109,7 @@ caller_server(int cl_conn, uid_t uid, gid_t gid)
 		if (fdcount == 0) {
 			nsec++;
 
-			if (nsec >= SERVER_TIMEOUT_NSECS)
+			if (nsec >= server_session_timeout)
 				break;
 
 		} else for (i = 0; i < fdcount; i++) {

@@ -163,6 +163,7 @@ extern change_rlimit_t change_rlimit[];
 extern work_limit_t wlimit;
 
 extern int server_log_priority;
+extern unsigned long server_session_timeout;
 extern const char *server_controlgroup;
 extern const char *server_pidfile;
 extern gid_t server_gid;

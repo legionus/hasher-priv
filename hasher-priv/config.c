@@ -48,6 +48,7 @@ const char *x11_display, *x11_key;
 uid_t   change_uid1, change_uid2;
 gid_t   change_gid1, change_gid2;
 gid_t   server_gid;
+unsigned long server_session_timeout = 0;
 mode_t  change_umask = 022;
 int change_nice = 8;
 int     allow_tty_devices, use_pty;
@@ -225,7 +226,7 @@ parse_rlim(const char *name, const char *value, const char *optname,
 }
 
 static unsigned long
-str2wlim(const char *name, const char *value, const char *filename)
+str2ul(const char *name, const char *value, const char *filename)
 {
 	char   *p = 0;
 	unsigned long long n;
@@ -245,7 +246,7 @@ static void
 modify_wlim(unsigned long *pval, const char *value,
 	    const char *optname, const char *filename, int is_system)
 {
-	unsigned long val = str2wlim(optname, value, filename);
+	unsigned long val = str2ul(optname, value, filename);
 
 	if (is_system || *pval == 0 || (val > 0 && val < *pval))
 		*pval = val;
@@ -657,6 +658,8 @@ set_server_config(const char *name, const char *value, const char *filename)
 {
 	if (!strcasecmp("priority", name))
 		server_log_priority = logging_level(value);
+	else if (!strcasecmp("session_timeout", name))
+		server_session_timeout = str2ul(name, value, filename);
 	else if (!strcasecmp("pidfile", name))
 	{
 		free((char *) server_pidfile);
