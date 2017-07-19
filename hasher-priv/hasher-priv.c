@@ -27,10 +27,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
 
 #include "priv.h"
 #include "logging.h"
 #include "sockets.h"
+#include "communication.h"
 
 static void
 my_error_print_progname(void)
@@ -41,7 +43,7 @@ my_error_print_progname(void)
 int
 main(int ac, const char *av[], const char *ev[])
 {
-	int     conn, rc;
+	int conn;
 	task_t  task;
 	char socketname[MAXPATHLEN];
 
@@ -53,37 +55,33 @@ main(int ac, const char *av[], const char *ev[])
 	/* Second, parse command line arguments. */
 	task = parse_cmdline(ac, av);
 
-	/* Connect to remote server. */
-	if ((conn = unix_connect(SOCKETDIR, PROJECT)) < 0)
+	/* Connect to remote server and open session. */
+	if (server_open_session(SOCKETDIR, PROJECT) < 0)
 		return EXIT_FAILURE;
 
-	if (recv_answer(conn, &rc) < 0 || rc != 0)
-		fatal("unable to start user-specific server");
-
-	/* Close master socket */
-	close(conn);
-
+	/* Open user session */
 	snprintf(socketname, sizeof(socketname), "hasher-priv-%d", geteuid());
 
 	if ((conn = unix_connect(SOCKETDIR, socketname)) < 0)
 		return EXIT_FAILURE;
 
-	if (send_hdr(conn, task, caller_num, task_args, ev) < 0)
+	if (server_task(conn, task, caller_num) < 0)
 		return EXIT_FAILURE;
 
-	if (send_args(conn, task_args) < 0)
+	if (server_task_fds(conn) < 0)
 		return EXIT_FAILURE;
 
-	if (send_args(conn, ev) < 0)
+	if (server_command(conn, CMD_TASK_ARGUMENTS, task_args) < 0)
 		return EXIT_FAILURE;
 
-	rc = EXIT_SUCCESS;
-
-	if (recv_answer(conn, &rc) < 0)
+	if (server_command(conn, CMD_TASK_ENVIRON, ev) < 0)
 		return EXIT_FAILURE;
 
-	/* Close socket. */
+	if (server_command(conn, CMD_TASK_RUN, NULL) < 0)
+		return EXIT_FAILURE;
+
+	/* Close session socket. */
 	close(conn);
 
-	return rc;
+	return EXIT_SUCCESS;
 }

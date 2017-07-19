@@ -28,6 +28,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 
+#include "logging.h"
 #include "priv.h"
 
 union cmsg_data_u
@@ -142,4 +143,52 @@ fd_recv(int ctl, char *data, size_t data_len)
 
 	cmsg_data_p.c = CMSG_DATA(cmsg);
 	return *cmsg_data_p.i;
+}
+
+int
+fds_send(int conn, int *fds, size_t fds_len)
+{
+	struct iovec iov  = {};
+	struct msghdr msg = {};
+	struct cmsghdr *cmsg;
+	ssize_t rc;
+	size_t len = sizeof(int) * fds_len;
+
+	union {
+		char buf[CMSG_SPACE(len)];
+		struct cmsghdr align;
+	} u;
+
+	/*
+	 * We must send at least 1 byte of real data in
+	 * order to send ancillary data
+	*/
+	char dummy = 'Z';
+
+	iov.iov_base = &dummy;
+	iov.iov_len  = sizeof(dummy);
+
+	msg.msg_iov        = &iov;
+	msg.msg_iovlen     = 1;
+	msg.msg_control    = u.buf;
+	msg.msg_controllen = sizeof(u.buf);
+
+	cmsg             = CMSG_FIRSTHDR(&msg);
+	cmsg->cmsg_level = SOL_SOCKET;
+	cmsg->cmsg_type  = SCM_RIGHTS;
+	cmsg->cmsg_len   = CMSG_LEN(len);
+
+	memcpy(CMSG_DATA(cmsg), fds, len);
+
+	if ((rc = TEMP_FAILURE_RETRY(sendmsg(conn, &msg, 0))) != (ssize_t) iov.iov_len) {
+		if (rc < 0)
+			err("Xsendmsg: %m");
+		else if (rc)
+			err("Xsendmsg: expected size %u, got %u", (unsigned) iov.iov_len, (unsigned) rc);
+		else
+			err("Xsendmsg: unexpected EOF");
+		return -1;
+	}
+
+	return 0;
 }

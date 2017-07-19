@@ -6,14 +6,11 @@ int unix_connect(const char *, const char *);
 
 int get_peercred(int, pid_t *, uid_t *, gid_t *);
 
-#include <sys/socket.h>
+int set_recv_timeout(int fd, int secs);
 
-int recv_iostreams(struct msghdr *, int *, int *, int *);
+#include <stdint.h>
 
-int send_hdr(int, task_t, unsigned, const char **, const char **);
-int send_args(int, const char **);
-
-int recv_answer(int, int *);
-int send_answer(int, int);
+int xsendmsg(int conn, void *data, uint64_t len);
+int xrecvmsg(int conn, void *data, uint64_t len);
 
 #endif /* _SOCKETS_H_ */

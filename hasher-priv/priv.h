@@ -29,7 +29,7 @@
 #define	MIN_CHANGE_GID	34
 #define	MAX_CONFIG_SIZE	16384
 
-#include "tasks.h"
+#include "communication.h"
 
 typedef struct
 {
@@ -83,6 +83,8 @@ void    stat_root_ok_validator(struct stat *st, const char *name);
 void    stat_any_ok_validator(struct stat *st, const char *name);
 void    fd_send(int ctl, int pass, const char *data, size_t len);
 int     fd_recv(int ctl, char *data, size_t data_len);
+int     fds_send(int conn, int *fds, size_t fds_len);
+
 int     unix_accept(int fd);
 int     log_listen(void);
 void    x11_drop_display(void);

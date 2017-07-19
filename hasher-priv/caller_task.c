@@ -8,36 +8,23 @@
 #include <stdio.h>
 #include <stdint.h>
 
-#include "tasks.h"
+#include "communication.h"
 #include "xmalloc.h"
 #include "logging.h"
 #include "sockets.h"
 #include "priv.h"
 
-struct nettask {
+struct task {
 	uint64_t type;
 
 	unsigned num;
-
-	uid_t uid;
-	gid_t gid;
 
 	int stdin;
 	int stdout;
 	int stderr;
 
-	const char **argv;
+	char **argv;
 	char **env;
-
-	/* conatainer for client args */
-	int argc;
-	uint64_t argslen;
-	char *args;
-
-	/* conatainer for client envs */
-	int envc;
-	uint64_t envslen;
-	char *envs;
 };
 
 static int
@@ -67,58 +54,16 @@ reopen_iostreams(int stdin, int stdout, int stderr)
 }
 
 static int
-recv_task_hdr(int conn, struct nettask *task)
+validate_arguments(task_t task, char **argv)
 {
-	struct msghdr msg = {};
-	struct iovec iov  = {};
-	char *recv_buf;
 	int required_args = 0, more_args = 0;
-
-	ssize_t n;
-
 	int rc = -1;
+	int argc = 0;
 
-	task->stdin  = -1;
-	task->stdout = -1;
-	task->stderr = -1;
+	while (argv && argv[argc])
+		argc++;
 
-	recv_buf = xcalloc(1UL, sizeof(struct taskhdr));
-
-	iov.iov_base = recv_buf;
-	iov.iov_len  = sizeof(struct taskhdr);
-
-	msg.msg_iov        = &iov;
-	msg.msg_iovlen     = 1;
-	msg.msg_controllen = CMSG_SPACE(sizeof(int) * 3);
-
-	msg.msg_control = xcalloc(1UL, msg.msg_controllen);
-
-	if ((n = TEMP_FAILURE_RETRY(recvmsg(conn, &msg, 0))) != (ssize_t) iov.iov_len) {
-		if (n < 0) {
-			err("recvmsg: %m");
-		} else {
-			if (n)
-				err("recvmsg: expected size %u, got %u", (unsigned) iov.iov_len, (unsigned) n);
-			else
-				err("recvmsg: unexpected EOF");
-		}
-		goto out;
-	}
-
-	if (get_peercred(conn, NULL, &task->uid, &task->gid) < 0)
-		goto out;
-
-	if (recv_iostreams(&msg, &task->stdin, &task->stdout, &task->stderr) < 0)
-		goto out;
-
-	task->type    = ((struct taskhdr *)recv_buf)->type;
-	task->argc    = ((struct taskhdr *)recv_buf)->argc;
-	task->argslen = ((struct taskhdr *)recv_buf)->argslen;
-	task->envc    = ((struct taskhdr *)recv_buf)->envc;
-	task->envslen = ((struct taskhdr *)recv_buf)->envslen;
-	task->num     = ((struct taskhdr *)recv_buf)->caller_num;
-
-	switch (task->type) {
+	switch (task) {
 		case TASK_GETCONF:
 		case TASK_KILLUID:
 		case TASK_GETUGID1:
@@ -138,114 +83,27 @@ recv_task_hdr(int conn, struct nettask *task)
 			required_args = 2;
 			break;
 		default:
-			err("unknown task type: %lu", task->type);
-			goto out;
+			err("unknown task type: %lu", task);
+			return rc;
 	}
 
-	if (task->argc < 0)
+	if (argc < 0)
 		err("number of arguments must be a positive");
 
-	else if (task->envc < 0)
-		err("number of environment variables must be a positive");
+	else if (argc < required_args)
+		err("%s task requires at least %u arguments", task2str(task), required_args);
 
-	else if (task->argc < required_args)
-		err("%s task requires at least %u arguments", task2str(task->type), required_args);
-
-	else if (task->argc > required_args && !more_args)
-		err("too many arguments for %s task", task2str(task->type));
-
-	else if ((task->argslen + task->envslen) > _POSIX_ARG_MAX)
-		err("too many arguments and environment variables");
+	else if (argc > required_args && !more_args)
+		err("too many arguments for %s task", task2str(task));
 
 	else
 		rc = 0;
-out:
-	free(msg.msg_control);
-	free(recv_buf);
 
 	return rc;
 }
 
 static int
-recv_data(int conn, char **data, uint64_t len)
-{
-	struct msghdr msg = {};
-	struct iovec iov = {};
-
-	ssize_t n;
-
-	*data = xcalloc(1UL, len);
-
-	iov.iov_base = *data;
-	iov.iov_len  = len;
-
-	msg.msg_name   = NULL;
-	msg.msg_iov    = &iov;
-	msg.msg_iovlen = 1;
-
-	if ((n = TEMP_FAILURE_RETRY(recvmsg(conn, &msg, 0))) != (ssize_t) iov.iov_len) {
-		if (n < 0) {
-			err("recvmsg: %m");
-		} else {
-			if (n)
-				err("recvmsg: expected size %u, got %u", (unsigned) iov.iov_len, (unsigned) n);
-			else
-				err("recvmsg: unexpected EOF");
-		}
-		return -1;
-	}
-
-	return 0;
-}
-
-static int
-recv_task_args(int conn, struct nettask *task)
-{
-	int i;
-	uint64_t n = 0;
-
-	if (recv_data(conn, &task->args, task->argslen) < 0)
-		return -1;
-
-	task->argv = xcalloc((size_t) task->argc + 1, sizeof(char *));
-
-	for (i = 0; i < task->argc; i++) {
-		if (task->argslen < n) {
-			err("wrong arguments length. Not null-terminated string?");
-			return -1;
-		}
-		task->argv[i] = task->args + n;
-		n += strnlen(task->args + n, task->argslen - n + 1) + 1;
-	}
-
-	return 0;
-}
-
-static int
-recv_task_envs(int conn, struct nettask *task)
-{
-	int i;
-	uint64_t n = 0;
-
-	if (recv_data(conn, &task->envs, task->envslen) < 0)
-		return -1;
-
-	task->env = xcalloc((size_t) task->envc + 1, sizeof(char *));
-
-	for (i = 0; i < task->envc; i++) {
-		if (task->envslen < n) {
-			err("wrong environment variables length. Not null-terminated string?");
-			return -1;
-		}
-		task->env[i] = task->envs + n;
-		n += strnlen(task->envs + n, task->envslen - n + 1) + 1;
-	}
-
-	return 0;
-}
-
-static int
-process_task(struct nettask *task)
+process_task(struct task *task)
 {
 	int rc = EXIT_FAILURE;
 	int i = 0;
@@ -275,7 +133,7 @@ process_task(struct nettask *task)
 	sanitize_fds();
 
 	/* Second, parse task arguments. */
-	parse_task_args(task->type, task->argv);
+	parse_task_args(task->type, (const char **) task->argv);
 
 	caller_num = task->num;
 
@@ -341,8 +199,9 @@ process_task(struct nettask *task)
 int
 caller_task(int conn)
 {
+	int fds[3];
 	int rc = EXIT_FAILURE;
-	struct nettask task = {};
+	struct task task = {};
 	pid_t pid, cpid;
 
 	if ((pid = fork()) != 0) {
@@ -353,18 +212,90 @@ caller_task(int conn)
 		return 0;
 	}
 
-	if (recv_task_hdr(conn, &task) < 0)
-		goto end;
+	while (1) {
+		struct taskhdr thdr = {};
+		struct cmd hdr = {};
 
-	if (task.argc > 0 && recv_task_args(conn, &task) < 0)
-		goto end;
+		if ((rc = xrecvmsg(conn, &hdr, sizeof(hdr))) < 0)
+			goto answer;
 
-	if (task.envc > 0 && recv_task_envs(conn, &task) < 0)
-		goto end;
+		switch (hdr.type) {
+			case CMD_TASK_BEGIN:
+				if (hdr.datalen != sizeof(struct taskhdr)) {
+					rc = -1;
+					goto answer;
+				}
 
-	if ((cpid = process_task(&task)) < 0)
-		goto end;
+				if ((rc = xrecvmsg(conn, &thdr, hdr.datalen)) < 0)
+					goto answer;
 
+				task.type = thdr.type;
+				task.num  = thdr.caller_num;
+
+				break;
+
+			case CMD_TASK_FDS:
+				if (hdr.datalen != sizeof(int) * 3) {
+					rc = -1;
+					goto answer;
+				}
+
+				if (task.stdin)
+					close(task.stdin);
+
+				if (task.stdout)
+					close(task.stdout);
+
+				if (task.stderr)
+					close(task.stderr);
+
+				if ((rc = recv_fds(conn, hdr.datalen, fds)) < 0)
+					goto answer;
+
+				task.stdin  = fds[0];
+				task.stdout = fds[1];
+				task.stderr = fds[2];
+
+				break;
+
+			case CMD_TASK_ARGUMENTS:
+				if (task.argv) {
+					free(task.argv[0]);
+					free(task.argv);
+				}
+
+				if ((rc = recv_list(conn, hdr.datalen, &task.argv)) < 0)
+					goto answer;
+
+				if (validate_arguments(task.type, task.argv) < 0)
+					goto answer;
+
+				break;
+
+			case CMD_TASK_ENVIRON:
+				if (task.env) {
+					free(task.env[0]);
+					free(task.env);
+				}
+
+				if ((rc = recv_list(conn, hdr.datalen, &task.env)) < 0)
+					goto answer;
+
+				break;
+
+			case CMD_TASK_RUN:
+				if ((cpid = process_task(&task)) < 0)
+					goto answer;
+
+				goto wait;
+
+			default:
+				err("unsupported command: %d", hdr.type);
+		}
+
+		send_command_response(conn, CMD_STATUS_DONE, NULL);
+	}
+wait:
 	while (1) {
 		pid_t w;
 		int wstatus;
@@ -385,14 +316,21 @@ caller_task(int conn)
 			break;
 		}
 	}
-end:
-	free(task.env);
-	free(task.argv);
-	free(task.args);
-	free(task.envs);
+answer:
+	if (task.env) {
+		free(task.env[0]);
+		free(task.env);
+	}
+
+	if (task.argv) {
+		free(task.argv[0]);
+		free(task.argv);
+	}
 
 	/* Notify client about result */
-	send_answer(conn, rc);
+	(rc == EXIT_FAILURE)
+		? send_command_response(conn, CMD_STATUS_FAILED, "command failed")
+		: send_command_response(conn, CMD_STATUS_DONE, NULL);
 
 	exit(rc);
 }

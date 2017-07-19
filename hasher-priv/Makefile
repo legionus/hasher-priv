@@ -53,7 +53,7 @@ CFLAGS = -pipe -O2
 override CFLAGS += $(WARNINGS)
 LDLIBS =
 
-SRC = hasher-priv.c cmdline.c fds.c sockets.c logging.c
+SRC = hasher-priv.c cmdline.c fds.c sockets.c logging.c communication.c xmalloc.c pass.c
 OBJ = $(SRC:.c=.o)
 
 server_SRC = hasher-privd.c \
@@ -62,7 +62,7 @@ server_SRC = hasher-privd.c \
 	config.c fds.c getconf.c getugid.c ipc.c killuid.c io_log.c io_x11.c \
 	makedev.c mount.c net.c parent.c pass.c pty.c signal.c tty.c \
 	umount.c unshare.c xmalloc.c x11.c sockets.c logging.c \
-	tasks.c epoll.c logging.c pidfile.c
+	epoll.c logging.c pidfile.c communication.c
 server_OBJ = $(server_SRC:.c=.o)
 
 DEP = $(SRC:.c=.d) $(server_SRC:.c=.d)

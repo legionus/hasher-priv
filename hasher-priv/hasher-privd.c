@@ -19,8 +19,8 @@
 #include "epoll.h"
 #include "logging.h"
 #include "pidfile.h"
-#include "tasks.h"
 #include "sockets.h"
+#include "communication.h"
 #include "priv.h"
 
 struct session {
@@ -37,7 +37,6 @@ static struct session *pool = NULL;
 
 unsigned caller_num;
 
-
 static int
 start_session(int conn)
 {
@@ -51,7 +50,7 @@ start_session(int conn)
 
 	while (a && *a) {
 		if ((*a)->caller_uid == uid) {
-			send_answer(conn, 0);
+			send_command_response(conn, CMD_STATUS_DONE, NULL);
 			return 0;
 		}
 		a = &(*a)->next;
@@ -69,19 +68,57 @@ start_session(int conn)
 	return 0;
 }
 
-static void
-close_session(pid_t pid)
+static int
+close_session(int conn)
 {
-	struct session *x, **a = &pool;
+	uid_t uid;
+	gid_t gid;
+	struct session *e = pool;
 
-	while (a && *a) {
-		if ((*a)->server_pid == pid) {
-			x = *a;
-			*a = (*a)->next;
-			free(x);
+	if (get_peercred(conn, NULL, &uid, &gid) < 0)
+		return -1;
+
+	while (e) {
+		if (e->caller_uid == uid) {
+			info("close session for %d user by request", uid);
+			if (kill(e->server_pid, SIGTERM) < 0) {
+				err("kill: %m");
+				return -1;
+			}
+			break;
 		}
-		a = &(*a)->next;
+		e = e->next;
 	}
+
+	return 0;
+}
+
+static int
+process_request(int conn)
+{
+	int rc;
+	struct cmd hdr = {};
+
+	if (xrecvmsg(conn, &hdr, sizeof(hdr)) < 0)
+		return -1;
+
+	switch (hdr.type) {
+		case CMD_OPEN_SESSION:
+			rc = start_session(conn);
+			break;
+		case CMD_CLOSE_SESSION:
+			rc = close_session(conn);
+			(rc < 0)
+				? send_command_response(conn, CMD_STATUS_FAILED, "command failed")
+				: send_command_response(conn, CMD_STATUS_DONE, NULL);
+			break;
+		default:
+			err("unknown command");
+			send_command_response(conn, CMD_STATUS_FAILED, "unknown command");
+			rc = -1;
+	}
+
+	return rc;
 }
 
 static void
@@ -93,6 +130,21 @@ finish_sessions(int sig)
 		if (kill(e->server_pid, sig) < 0)
 			err("kill: %m");
 		e = e->next;
+	}
+}
+
+static void
+clean_session(pid_t pid)
+{
+	struct session *x, **a = &pool;
+
+	while (a && *a) {
+		if ((*a)->server_pid == pid) {
+			x = *a;
+			*a = (*a)->next;
+			free(x);
+		}
+		a = &(*a)->next;
 	}
 }
 
@@ -114,7 +166,7 @@ handle_signal(uint32_t signo)
 				return -1;
 			}
 
-			close_session(pid);
+			clean_session(pid);
 			break;
 
 		case SIGHUP:
@@ -268,7 +320,12 @@ int main(int argc, char **argv)
 					continue;
 				}
 
-				start_session(conn);
+				if (set_recv_timeout(conn, 3) < 0) {
+					close(conn);
+					continue;
+				}
+
+				process_request(conn);
 
 				close(conn);
 			}

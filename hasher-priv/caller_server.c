@@ -1,4 +1,5 @@
 #include <sys/param.h> /* MAXPATHLEN */
+#include <sys/socket.h> /* SOCK_CLOEXEC */
 #include <sys/prctl.h>
 #include <sys/signalfd.h>
 #include <sys/wait.h>
@@ -13,6 +14,7 @@
 #include "sockets.h"
 #include "logging.h"
 #include "epoll.h"
+#include "communication.h"
 
 static int finish_server = 0;
 static char socketpath[MAXPATHLEN];
@@ -38,6 +40,25 @@ handle_signal(uint32_t signo)
 		case SIGHUP:
 			break;
 	}
+	return 0;
+}
+
+static int
+process_task(int conn)
+{
+	uid_t uid;
+	gid_t gid;
+
+	if (get_peercred(conn, NULL, &uid, &gid) < 0)
+		return -1;
+
+	if (caller_uid != uid || caller_gid != gid) {
+		err("user (uid=%d) don't have permission to send commands to the session of user (uid=%d)", uid, caller_uid);
+		return -1;
+	}
+
+	caller_task(conn);
+
 	return 0;
 }
 
@@ -90,7 +111,7 @@ caller_server(int cl_conn, uid_t uid, gid_t gid)
 	}
 
 	/* Tell client that caller server is ready */
-	send_answer(cl_conn, 0);
+	send_command_response(cl_conn, CMD_STATUS_DONE, NULL);
 	close(cl_conn);
 
 	nsec = 0;
@@ -136,12 +157,17 @@ caller_server(int cl_conn, uid_t uid, gid_t gid)
 					continue;
 				}
 
-				caller_task(conn);
+				if (set_recv_timeout(conn, 3) < 0) {
+					close(conn);
+					continue;
+				}
+
+				if (!process_task(conn)) {
+					/* reset timer */
+					nsec = 0;
+				}
 
 				close(conn);
-
-				/* reset timer */
-				nsec = 0;
 			}
 		}
 	}
@@ -153,6 +179,7 @@ caller_server(int cl_conn, uid_t uid, gid_t gid)
 	}
 
 	info("%s(%d): finish session server", caller_user, caller_uid);
+	unlink(socketpath);
 
 	return 0;
 }
@@ -172,7 +199,7 @@ fork_server(int cl_conn, uid_t uid, gid_t gid)
 	}
 
 	if ((rc = caller_server(cl_conn, uid, gid)) < 0) {
-		send_answer(cl_conn, rc);
+		send_command_response(cl_conn, CMD_STATUS_FAILED, NULL);
 		exit(EXIT_FAILURE);
 	}
 

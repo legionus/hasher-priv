@@ -10,7 +10,6 @@
 #include <unistd.h>
 
 #include "logging.h"
-#include "tasks.h"
 #include "sockets.h"
 
 /* This function may be executed with caller or child privileges. */
@@ -70,7 +69,7 @@ int unix_connect(const char *dir_name, const char *file_name)
 	snprintf(sun.sun_path, sizeof sun.sun_path, "%s/%s", dir_name, file_name);
 
 	if (connect(conn, (const struct sockaddr *)&sun, sizeof(struct sockaddr_un)) < 0) {
-		err("connect: %m");
+		err("connect: %s: %m", sun.sun_path);
 		return -1;
 	}
 
@@ -99,173 +98,69 @@ int get_peercred(int fd, pid_t *pid, uid_t *uid, gid_t *gid)
 	return 0;
 }
 
-int recv_iostreams(struct msghdr *msg, int *stdin, int *stdout, int *stderr)
+int
+set_recv_timeout(int fd, int secs)
 {
-	struct cmsghdr *cmsg;
-	int *fds;
+	struct timeval tv = {};
 
-	if (!msg->msg_controllen) {
-		err("ancillary data not specified");
+	tv.tv_sec = secs;
+
+	if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(struct timeval)) < 0) {
+		err("setsockopt(SO_RCVTIMEO): %m");
 		return -1;
 	}
-
-	for (cmsg = CMSG_FIRSTHDR(msg); cmsg; cmsg = CMSG_NXTHDR(msg, cmsg)) {
-		if (cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS)
-			continue;
-
-		if (cmsg->cmsg_len - CMSG_LEN(0) != sizeof(int) * 3) {
-			err("expected fd payload");
-			return -1;
-		}
-
-		fds = (int *)(CMSG_DATA(cmsg));
-
-		if (stdin)
-			*stdin = fds[0];
-
-		if (stdout)
-			*stdout = fds[1];
-
-		if (stderr)
-			*stderr = fds[2];
-	}
-
 	return 0;
 }
 
-int send_hdr(int conn, task_t task, unsigned caller_num, const char **argv, const char **env)
+int
+xsendmsg(int conn, void *data, uint64_t len)
 {
-	int myfds[3];
-	struct iovec iov  = {};
+	ssize_t n;
+
 	struct msghdr msg = {};
-	struct cmsghdr *cmsg;
-	struct taskhdr hdr;
-	ssize_t rc;
+	struct iovec iov  = {};
 
-	char buf[CMSG_SPACE(sizeof(myfds))];
+	iov.iov_base = data;
+	iov.iov_len  = len;
 
-	hdr.type       = task;
-	hdr.caller_num = caller_num;
-	hdr.argc       = 0;
-	hdr.argslen    = 0;
-	hdr.envc       = 0;
-	hdr.envslen    = 0;
+	msg.msg_iov    = &iov;
+	msg.msg_iovlen = 1;
 
-	while (argv && argv[hdr.argc])
-		hdr.argslen += strlen(argv[hdr.argc++]) + 1;
-
-	while (env && env[hdr.envc])
-		hdr.envslen += strlen(env[hdr.envc++]) + 1;
-
-	myfds[0] = STDIN_FILENO;
-	myfds[1] = STDOUT_FILENO;
-	myfds[2] = STDERR_FILENO;
-
-	iov.iov_base = &hdr;
-	iov.iov_len  = sizeof(hdr);
-
-	msg.msg_iov        = &iov;
-	msg.msg_iovlen     = 1;
-	msg.msg_control    = buf;
-	msg.msg_controllen = sizeof(buf);
-
-	cmsg             = CMSG_FIRSTHDR(&msg);
-	cmsg->cmsg_level = SOL_SOCKET;
-	cmsg->cmsg_type  = SCM_RIGHTS;
-	cmsg->cmsg_len   = CMSG_LEN(sizeof(myfds));
-
-	memcpy(CMSG_DATA(cmsg), myfds, sizeof(myfds));
-
-	if ((rc = TEMP_FAILURE_RETRY(sendmsg(conn, &msg, 0))) != (ssize_t) iov.iov_len) {
-		if (rc < 0) {
-			err("sendmsg: %m");
-		} else {
-			if (rc)
-				err("sendmsg: expected size %u, got %u", (unsigned) iov.iov_len, (unsigned) rc);
-			else
-				err("sendmsg: unexpected EOF");
-		}
+	if ((n = TEMP_FAILURE_RETRY(sendmsg(conn, &msg, 0))) != (ssize_t) len) {
+		if (n < 0)
+			err("recvmsg: %m");
+		else if (n)
+			err("recvmsg: expected size %u, got %u", (unsigned) len, (unsigned) n);
+		else
+			err("recvmsg: unexpected EOF");
 		return -1;
 	}
 
 	return 0;
 }
 
-int send_args(int conn, const char **argv)
+int
+xrecvmsg(int conn, void *data, uint64_t len)
 {
-	int i             = 0;
+	ssize_t n;
+
 	struct msghdr msg = {};
 	struct iovec iov  = {};
 
-	ssize_t rc;
+	iov.iov_base = data;
+	iov.iov_len  = len;
 
-	msg.msg_iov        = &iov;
-	msg.msg_iovlen     = 1;
-	msg.msg_control    = NULL;
-	msg.msg_controllen = 0;
+	msg.msg_name   = NULL;
+	msg.msg_iov    = &iov;
+	msg.msg_iovlen = 1;
 
-	while (argv && argv[i]) {
-		iov.iov_base = (char *)argv[i];
-		iov.iov_len  = strlen(argv[i]) + 1;
-
-		if ((rc = TEMP_FAILURE_RETRY(sendmsg(conn, &msg, 0))) != (ssize_t) iov.iov_len) {
-			if (rc < 0) {
-				err("sendmsg: %m");
-			} else {
-				if (rc)
-					err("sendmsg: expected size %u, got %u", (unsigned) iov.iov_len, (unsigned) rc);
-				else
-					err("sendmsg: unexpected EOF");
-			}
-			return -1;
-		}
-
-		i++;
-	}
-
-	return 0;
-}
-
-int recv_answer(int conn, int *retcode)
-{
-	struct msghdr msg = {};
-	struct iovec iov  = {};
-
-	iov.iov_base = retcode;
-	iov.iov_len  = sizeof(int);
-
-	msg.msg_iov        = &iov;
-	msg.msg_iovlen     = 1;
-	msg.msg_control    = NULL;
-	msg.msg_controllen = 0;
-
-	if (TEMP_FAILURE_RETRY(recvmsg(conn, &msg, 0)) < 0) {
-		err("recvmsg: %m");
-		return -1;
-	}
-
-	return 0;
-}
-
-int send_answer(int conn, int retcode)
-{
-	struct msghdr msg = {};
-	struct iovec iov  = {};
-
-	iov.iov_base = &retcode;
-	iov.iov_len  = sizeof(retcode);
-
-	msg.msg_iov        = &iov;
-	msg.msg_iovlen     = 1;
-	msg.msg_control    = NULL;
-	msg.msg_controllen = 0;
-
-	if (TEMP_FAILURE_RETRY(sendmsg(conn, &msg, MSG_NOSIGNAL)) < 0) {
-		/* The client left without waiting for an answer */
-		if (errno == EPIPE)
-			return 0;
-
-		err("sendmsg: %m");
+	if ((n = TEMP_FAILURE_RETRY(recvmsg(conn, &msg, MSG_WAITALL))) != (ssize_t) len) {
+		if (n < 0)
+			err("recvmsg: %m");
+		else if (n)
+			err("recvmsg: expected size %u, got %u", (unsigned) len, (unsigned) n);
+		else
+			err("recvmsg: unexpected EOF");
 		return -1;
 	}
 
