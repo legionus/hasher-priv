@@ -34,7 +34,7 @@
 #include "priv.h"
 #include "xmalloc.h"
 
-static void
+void
 set_rlimits(void)
 {
 	change_rlimit_t *p;
@@ -136,8 +136,6 @@ chrootuid(uid_t uid, gid_t gid, const char *ehome,
 	if ( master < 0)
 		error(EXIT_FAILURE, 0, "failed to create pty");
 
-	set_rlimits();
-
 	/* Set close-on-exec flag on all non-standard descriptors. */
 	cloexec_fds();
 
@@ -155,12 +153,6 @@ chrootuid(uid_t uid, gid_t gid, const char *ehome,
 			&& (close(pipe_out[1]) || close(pipe_err[1])))
 		    || (x11_display && close(ctl[1])))
 			error(EXIT_FAILURE, errno, "close");
-
-		if (setgid(caller_gid) < 0)
-			error(EXIT_FAILURE, errno, "setgid");
-
-		if (setuid(caller_uid) < 0)
-			error(EXIT_FAILURE, errno, "setuid");
 
 		/* Process is no longer privileged at this point. */
 

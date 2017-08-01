@@ -51,9 +51,9 @@ CPPFLAGS = -std=gnu99 -D_GNU_SOURCE $(CHDIRUID_FLAGS) \
 	-DSOCKETDIR=\"$(socketdir)\" -DPROJECT=\"$(PROJECT)\"
 CFLAGS = -pipe -O2
 override CFLAGS += $(WARNINGS)
-LDLIBS =
+LDLIBS = $(shell pkg-config --libs libcap)
 
-SRC = hasher-priv.c cmdline.c fds.c sockets.c logging.c communication.c xmalloc.c pass.c
+SRC = hasher-priv.c caller.c chdir.c config.c cmdline.c fds.c sockets.c logging.c communication.c xmalloc.c pass.c x11.c
 OBJ = $(SRC:.c=.o)
 
 server_SRC = hasher-privd.c \

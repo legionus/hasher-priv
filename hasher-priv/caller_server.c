@@ -3,6 +3,7 @@
 #include <sys/prctl.h>
 #include <sys/signalfd.h>
 #include <sys/wait.h>
+#include <sys/capability.h>
 
 #include <stdio.h>
 #include <errno.h>
@@ -18,6 +19,8 @@
 
 static int finish_server = 0;
 static char socketpath[MAXPATHLEN];
+
+static char session_caps[] = "cap_setgid,cap_setuid,cap_kill,cap_mknod,cap_sys_chroot,cap_sys_admin=ep";
 
 static int
 handle_signal(uint32_t signo)
@@ -63,6 +66,77 @@ process_task(int conn)
 }
 
 static int
+drop_privs(void)
+{
+	cap_t caps;
+
+	if (setgroups(0UL, 0) < 0) {
+		err("setgroups: %m");
+		return -1;
+	}
+
+	if (setgid(caller_gid) < 0) {
+		err("setgid: %m");
+		return -1;
+	}
+
+#ifdef ENABLE_SUPPLEMENTARY_GROUPS
+	if (initgroups(caller_user, caller_gid) < 0) {
+		err("initgroups: %s: %m", caller_user);
+		return -1;
+	}
+#endif /* ENABLE_SUPPLEMENTARY_GROUPS */
+
+	if(prctl(PR_SET_KEEPCAPS, 1) < 0) {
+		err("prctl(PR_SET_KEEPCAPS): %m");
+		return -1;
+	}
+
+	// Drop capabilities
+	if ((caps = cap_from_text(session_caps)) == NULL) {
+		err("cap_from_text: %m");
+		return -1;
+	}
+
+	if (cap_set_proc(caps) < 0) {
+		err("cap_set_proc: %m");
+		return -1;
+	}
+
+	if (cap_free(caps) < 0) {
+		err("cap_free: %m");
+		return -1;
+	}
+
+	if (setreuid(caller_uid, caller_uid) < 0) {
+		err("setreuid: %m");
+		return -1;
+	}
+
+	if ((caps = cap_from_text(session_caps)) == NULL) {
+		err("cap_from_text: %m");
+		return -1;
+	}
+
+	if (cap_set_proc(caps) < 0) {
+		err("cap_set_proc: %m");
+		return -1;
+	}
+
+	if (cap_free(caps) < 0) {
+		err("cap_free: %m");
+		return -1;
+	}
+
+	if(prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) < 0) {
+		err("prctl(PR_SET_NO_NEW_PRIVS): %m");
+		return -1;
+	}
+
+	return 0;
+}
+
+static int
 caller_server(int cl_conn, uid_t uid, gid_t gid)
 {
 	int i;
@@ -93,6 +167,11 @@ caller_server(int cl_conn, uid_t uid, gid_t gid)
 		return -1;
 	}
 	free(sockname);
+
+	if (drop_privs() < 0)
+		return -1;
+
+	set_rlimits();
 
 	sigfillset(&mask);
 	sigprocmask(SIG_SETMASK, &mask, NULL);
