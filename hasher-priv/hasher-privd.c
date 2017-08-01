@@ -237,11 +237,10 @@ int main(int argc, char **argv)
 	if (!pidfile && server_pidfile && *server_pidfile)
 		pidfile = server_pidfile;
 
-	if (server_log_priority >= 0)
-		loglevel = server_log_priority;
-
 	if (loglevel < 0)
-		loglevel = logging_level("info");
+		loglevel = (server_log_priority >= 0)
+			? server_log_priority
+			: logging_level("info");
 
 	umask(022);
 
