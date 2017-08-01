@@ -94,7 +94,7 @@ recv_list(int conn, uint64_t datalen, char ***argv)
 {
 	char *args = xcalloc(1UL, datalen);
 
-	if (xrecvmsg(conn, args, datalen) < 0) {
+	if (datalen > 0 && xrecvmsg(conn, args, datalen) < 0) {
 		free(args);
 		return -1;
 	}
