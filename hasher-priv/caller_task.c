@@ -135,8 +135,6 @@ process_task(struct task *task)
 	/* Second, parse task arguments. */
 	parse_task_args(task->type, (const char **) task->argv);
 
-	caller_num = task->num;
-
 	if (chroot_path && *chroot_path != '/')
 		fatal("%s: invalid chroot path", chroot_path);
 
@@ -146,9 +144,6 @@ process_task(struct task *task)
 	/* We don't need environment variables any longer. */
 	if (clearenv() != 0)
 		fatal("clearenv: %m");
-
-	/* Load config according to caller information. */
-	configure();
 
 	/* Finally, execute choosen task. */
 	switch (task->type) {
@@ -213,7 +208,7 @@ caller_task(int conn)
 	}
 
 	while (1) {
-		struct taskhdr thdr = {};
+		task_t type = TASK_NONE;
 		struct cmd hdr = {};
 
 		if ((rc = xrecvmsg(conn, &hdr, sizeof(hdr))) < 0)
@@ -221,24 +216,19 @@ caller_task(int conn)
 
 		switch (hdr.type) {
 			case CMD_TASK_BEGIN:
-				if (hdr.datalen != sizeof(struct taskhdr)) {
-					rc = -1;
-					goto answer;
-				}
-
-				if ((rc = xrecvmsg(conn, &thdr, hdr.datalen)) < 0)
+				if (hdr.datalen != sizeof(type))
 					goto answer;
 
-				task.type = thdr.type;
-				task.num  = thdr.caller_num;
+				if ((rc = xrecvmsg(conn, &type, hdr.datalen)) < 0)
+					goto answer;
+
+				task.type = type;
 
 				break;
 
 			case CMD_TASK_FDS:
-				if (hdr.datalen != sizeof(int) * 3) {
-					rc = -1;
+				if (hdr.datalen != sizeof(int) * 3)
 					goto answer;
-				}
 
 				if (task.stdin)
 					close(task.stdin);

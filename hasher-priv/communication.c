@@ -288,52 +288,89 @@ server_command(int conn, cmd_t cmd, const char **args)
 }
 
 int
-server_open_session(const char *dir_name, const char *file_name)
+server_open_session(const char *dir_name, const char *file_name, unsigned num)
 {
-	int conn, rc;
-
-	if ((conn = unix_connect(dir_name, file_name)) < 0)
-		return -1;
-
-	rc = server_command(conn, CMD_OPEN_SESSION, NULL);
-	close(conn);
-
-	return rc;
-}
-
-int
-server_close_session(const char *dir_name, const char *file_name)
-{
-	int conn, rc;
-
-	if ((conn = unix_connect(dir_name, file_name)) < 0)
-		return -1;
-
-	rc = server_command(conn, CMD_CLOSE_SESSION, NULL);
-	close(conn);
-
-	return rc;
-}
-
-int
-server_task(int conn, task_t type, unsigned num)
-{
+	int conn;
 	cmd_status_t status;
+	struct cmd hdr = {};
 	char *msg = NULL;
 
-	struct cmd hdr = {};
-	struct taskhdr taskhdr = {};
+	if ((conn = unix_connect(dir_name, file_name)) < 0)
+		return -1;
 
-	hdr.type    = CMD_TASK_BEGIN;
-	hdr.datalen = sizeof(taskhdr);
-
-	taskhdr.type = type;
-	taskhdr.caller_num = num;
+	hdr.type = CMD_OPEN_SESSION;
+	hdr.datalen = sizeof(num);
 
 	if (xsendmsg(conn, &hdr, sizeof(hdr)) < 0)
 		return -1;
 
-	if (xsendmsg(conn, &taskhdr, hdr.datalen) < 0)
+	if (xsendmsg(conn, &num, sizeof(num)) < 0)
+		return -1;
+
+	if (recv_command_response(conn, &status, &msg) < 0) {
+		free(msg);
+		return -1;
+	}
+
+	close(conn);
+
+	if (msg && *msg) {
+		err("%s", msg);
+		free(msg);
+	}
+
+	return status == CMD_STATUS_FAILED ? -1 : 0;
+}
+
+int
+server_close_session(const char *dir_name, const char *file_name, unsigned num)
+{
+	int conn;
+	cmd_status_t status;
+	struct cmd hdr = {};
+	char *msg = NULL;
+
+	if ((conn = unix_connect(dir_name, file_name)) < 0)
+		return -1;
+
+	hdr.type = CMD_CLOSE_SESSION;
+	hdr.datalen = sizeof(num);
+
+	if (xsendmsg(conn, &hdr, sizeof(hdr)) < 0)
+		return -1;
+
+	if (xsendmsg(conn, &num, sizeof(num)) < 0)
+		return -1;
+
+	if (recv_command_response(conn, &status, &msg) < 0) {
+		free(msg);
+		return -1;
+	}
+
+	close(conn);
+
+	if (msg && *msg) {
+		err("%s", msg);
+		free(msg);
+	}
+
+	return status == CMD_STATUS_FAILED ? -1 : 0;
+}
+
+int
+server_task(int conn, task_t type)
+{
+	cmd_status_t status;
+	char *msg = NULL;
+	struct cmd hdr = {};
+
+	hdr.type    = CMD_TASK_BEGIN;
+	hdr.datalen = sizeof(type);
+
+	if (xsendmsg(conn, &hdr, sizeof(hdr)) < 0)
+		return -1;
+
+	if (xsendmsg(conn, &type, hdr.datalen) < 0)
 		return -1;
 
 	if (recv_command_response(conn, &status, &msg) < 0) {

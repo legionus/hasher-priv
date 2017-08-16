@@ -56,16 +56,16 @@ main(int ac, const char *av[], const char *ev[])
 	task = parse_cmdline(ac, av);
 
 	/* Connect to remote server and open session. */
-	if (server_open_session(SOCKETDIR, PROJECT) < 0)
+	if (server_open_session(SOCKETDIR, PROJECT, caller_num) < 0)
 		return EXIT_FAILURE;
 
 	/* Open user session */
-	snprintf(socketname, sizeof(socketname), "hasher-priv-%d", geteuid());
+	snprintf(socketname, sizeof(socketname), "hasher-priv-%d-%u", geteuid(), caller_num);
 
 	if ((conn = unix_connect(SOCKETDIR, socketname)) < 0)
 		return EXIT_FAILURE;
 
-	if (server_task(conn, task, caller_num) < 0)
+	if (server_task(conn, task) < 0)
 		return EXIT_FAILURE;
 
 	if (server_task_fds(conn) < 0)

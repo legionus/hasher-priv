@@ -44,11 +44,6 @@ typedef enum {
 	TASK_UMOUNT
 } task_t;
 
-struct taskhdr {
-	task_t type;
-	unsigned caller_num;
-};
-
 char *task2str(task_t type);
 task_t str2task(char *s);
 
@@ -58,10 +53,10 @@ int recv_list(int conn, uint64_t datalen, char ***argv);
 long int send_command_response(int conn, int retcode, const char *fmt, ...);
 
 int server_command(int conn, cmd_t cmd, const char **args);
-int server_open_session(const char *dir_name, const char *file_name);
-int server_close_session(const char *dir_name, const char *file_name);
+int server_open_session(const char *dir_name, const char *file_name, unsigned caller_num);
+int server_close_session(const char *dir_name, const char *file_name, unsigned caller_num);
 
-int server_task(int conn, task_t task, unsigned caller_num);
+int server_task(int conn, task_t task);
 int server_task_fds(int conn);
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))

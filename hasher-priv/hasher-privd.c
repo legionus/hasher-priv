@@ -29,6 +29,8 @@ struct session {
 	uid_t caller_uid;
 	gid_t caller_gid;
 
+	unsigned caller_num;
+
 	pid_t server_pid;
 };
 
@@ -38,7 +40,7 @@ static struct session *pool = NULL;
 unsigned caller_num;
 
 static int
-start_session(int conn)
+start_session(int conn, unsigned num)
 {
 	uid_t uid;
 	gid_t gid;
@@ -49,27 +51,30 @@ start_session(int conn)
 		return -1;
 
 	while (a && *a) {
-		if ((*a)->caller_uid == uid) {
+		if ((*a)->caller_uid == uid && (*a)->caller_num == num) {
 			send_command_response(conn, CMD_STATUS_DONE, NULL);
 			return 0;
 		}
 		a = &(*a)->next;
 	}
 
-	if ((server_pid = fork_server(conn, uid, gid)) < 0)
+	info("start session for %d:%u user", uid, num);
+
+	if ((server_pid = fork_server(conn, uid, gid, num)) < 0)
 		return -1;
 
 	*a = calloc(1L, sizeof(struct session));
 
 	(*a)->caller_uid = uid;
 	(*a)->caller_gid = gid;
+	(*a)->caller_num = num;
 	(*a)->server_pid = server_pid;
 
 	return 0;
 }
 
 static int
-close_session(int conn)
+close_session(int conn, unsigned num)
 {
 	uid_t uid;
 	gid_t gid;
@@ -79,8 +84,8 @@ close_session(int conn)
 		return -1;
 
 	while (e) {
-		if (e->caller_uid == uid) {
-			info("close session for %d user by request", uid);
+		if (e->caller_uid == uid && e->caller_num == num) {
+			info("close session for %d:%u user by request", uid, num);
 			if (kill(e->server_pid, SIGTERM) < 0) {
 				err("kill: %m");
 				return -1;
@@ -98,16 +103,26 @@ process_request(int conn)
 {
 	int rc;
 	struct cmd hdr = {};
+	unsigned num = 0;
 
 	if (xrecvmsg(conn, &hdr, sizeof(hdr)) < 0)
 		return -1;
 
+	if (hdr.datalen != sizeof(num)) {
+		err("bad command");
+		send_command_response(conn, CMD_STATUS_FAILED, "bad command");
+		return -1;
+	}
+
+	if (xrecvmsg(conn, &num, sizeof(num)) < 0)
+		return -1;
+
 	switch (hdr.type) {
 		case CMD_OPEN_SESSION:
-			rc = start_session(conn);
+			rc = start_session(conn, num);
 			break;
 		case CMD_CLOSE_SESSION:
-			rc = close_session(conn);
+			rc = close_session(conn, num);
 			(rc < 0)
 				? send_command_response(conn, CMD_STATUS_FAILED, "command failed")
 				: send_command_response(conn, CMD_STATUS_DONE, NULL);

@@ -137,7 +137,7 @@ drop_privs(void)
 }
 
 static int
-caller_server(int cl_conn, uid_t uid, gid_t gid)
+caller_server(int cl_conn, uid_t uid, gid_t gid, unsigned num)
 {
 	int i;
 	unsigned long nsec;
@@ -151,11 +151,13 @@ caller_server(int cl_conn, uid_t uid, gid_t gid)
 	if (init_caller_data(uid, gid) < 0)
 		return -1;
 
-	info("%s(%d): start session server", caller_user, caller_uid);
+	caller_num = num;
+
+	info("%s(%d) num=%u: start session server", caller_user, caller_uid, caller_num);
 
 	umask(077);
 
-	xasprintf(&sockname, "hasher-priv-%d", caller_uid);
+	xasprintf(&sockname, "hasher-priv-%d-%d", caller_uid, caller_num);
 
 	if ((fd_conn = unix_listen(SOCKETDIR, sockname)) < 0)
 		return -1;
@@ -170,6 +172,9 @@ caller_server(int cl_conn, uid_t uid, gid_t gid)
 
 	if (drop_privs() < 0)
 		return -1;
+
+	/* Load config according to caller information. */
+	configure();
 
 	set_rlimits();
 
@@ -264,7 +269,7 @@ caller_server(int cl_conn, uid_t uid, gid_t gid)
 }
 
 pid_t
-fork_server(int cl_conn, uid_t uid, gid_t gid)
+fork_server(int cl_conn, uid_t uid, gid_t gid, unsigned num)
 {
 	int rc;
 	pid_t pid;
@@ -277,7 +282,7 @@ fork_server(int cl_conn, uid_t uid, gid_t gid)
 		return pid;
 	}
 
-	if ((rc = caller_server(cl_conn, uid, gid)) < 0) {
+	if ((rc = caller_server(cl_conn, uid, gid, num)) < 0) {
 		send_command_response(cl_conn, CMD_STATUS_FAILED, NULL);
 		exit(EXIT_FAILURE);
 	}

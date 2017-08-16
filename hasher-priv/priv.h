@@ -127,7 +127,7 @@ int     do_mount(void);
 int     do_umount(void);
 
 int caller_task(int);
-pid_t fork_server(int, uid_t, gid_t);
+pid_t fork_server(int, uid_t, gid_t, unsigned);
 
 extern const char *chroot_path;
 extern const char **chroot_argv;

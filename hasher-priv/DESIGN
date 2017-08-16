@@ -67,6 +67,29 @@ Here is control flow for session server:
   + set capabilites to cap_setgid, cap_setuid, cap_kill, cap_mknod, cap_sys_chroot, cap_sys_admin
   + setuid to caller user
   + set no_new_privs bit
++ load configuration
+  + safe chdir to /etc/hasher-priv
+  + safe load "system" file
+    + config format is sequence of name=value lines
+    + valid names are:
+      user1
+      user2
+      prefix
+      umask
+      nice
+      allow_ttydev
+      allowed_mountpoints
+      rlimit_(hard|soft)_*
+      wlimit_(time_elapsed|time_idle|bytes_written)
+  + safe chdir to "user.d"
+  + safe load caller_user file
+    + change_user1 and change_user2 should be initialized here
+  + if caller_num is defined
+    + discard change_user1 and change_user2
+    + safe load caller_user:caller_num file
+      + change_user1 and change_user2 should be initialized here
+  + change_uid1 and change_gid1 initialized from change_user1
+  + change_uid2 and change_gid2 initialized from change_user2
 + set rlimits
 + I/O event notification and add file descriptors
   + create a file descriptor for accepting signals
@@ -113,29 +136,6 @@ Here is control flow for the task handler:
     + chroot_path and chroot_argv are initialized here
     + read work limit hints from environment variables
     + drop all environment variables
-    + load configuration
-      + safe chdir to /etc/hasher-priv
-      + safe load "system" file
-        + config format is sequence of name=value lines
-        + valid names are:
-          user1
-          user2
-          prefix
-          umask
-          nice
-          allow_ttydev
-          allowed_mountpoints
-          rlimit_(hard|soft)_*
-          wlimit_(time_elapsed|time_idle|bytes_written)
-      + safe chdir to "user.d"
-      + safe load caller_user file
-        + change_user1 and change_user2 should be initialized here
-      + if caller_num is defined
-        + discard change_user1 and change_user2
-        + safe load caller_user:caller_num file
-          + change_user1 and change_user2 should be initialized here
-      + change_uid1 and change_gid1 initialized from change_user1
-      + change_uid2 and change_gid2 initialized from change_user2
     + execute choosen task
       + getconf: print config file /etc/hasher-priv/user.d/caller_user[:caller_num]
       + getugid1: print change_uid1:change_gid1 pair
