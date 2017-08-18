@@ -68,7 +68,6 @@ int     init_caller_data(uid_t uid, gid_t gid);
 void    parse_env(void);
 void    configure(void);
 void    configure_server(void);
-void    set_rlimits(void);
 void    ch_uid(uid_t uid, uid_t *save);
 void    ch_gid(gid_t gid, gid_t *save);
 void    chdiruid(const char *path);

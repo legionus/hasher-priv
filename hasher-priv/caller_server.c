@@ -136,6 +136,36 @@ drop_privs(void)
 	return 0;
 }
 
+static void
+set_rlimits(void)
+{
+	change_rlimit_t *p;
+
+	for (p = change_rlimit; p->name; ++p)
+	{
+		struct rlimit rlim;
+
+		if (!p->hard && !p->soft)
+			continue;
+
+		if (getrlimit(p->resource, &rlim) < 0)
+			error(EXIT_FAILURE, errno, "getrlimit: %s", p->name);
+
+		if (p->hard)
+			rlim.rlim_max = *(p->hard);
+
+		if (p->soft)
+			rlim.rlim_cur = *(p->soft);
+
+		if ((unsigned long) rlim.rlim_max <
+		    (unsigned long) rlim.rlim_cur)
+			rlim.rlim_cur = rlim.rlim_max;
+
+		if (setrlimit(p->resource, &rlim) < 0)
+			error(EXIT_FAILURE, errno, "setrlimit: %s", p->name);
+	}
+}
+
 static int
 caller_server(int cl_conn, uid_t uid, gid_t gid, unsigned num)
 {
